@@ -24,6 +24,31 @@
         "low_vol",
         "value"
       ]
+    },
+    {
+      "date": "2026-07-13",
+      "factors": {
+        "low_vol": {
+          "ic": -0.1407,
+          "win_rate": 0
+        },
+        "value": {
+          "ic": -0.1407,
+          "win_rate": 0
+        },
+        "quality": {
+          "ic": 0.1386,
+          "win_rate": 100
+        },
+        "momentum_6m": {
+          "ic": 0.3613,
+          "win_rate": 100
+        }
+      },
+      "alerts": [
+        "low_vol",
+        "value"
+      ]
     }
   ]
 }
