@@ -89,11 +89,9 @@ def run_monthly_monitor():
 
 
 def analyze_factors(stock_data, date):
-    """计算每个因子的 IC 和胜率"""
-    scores = compute_stock_factors(stock_data, date)
-
-    # 获取未来一个月收益（用下月数据做标签）
-    # 简化：用最近一个月的收益作为标签
+    """计算每个因子的 IC 和胜率 — 硬编码每个因子独立计算"""
+    
+    # 获取过去一个月收益作为标签
     returns = {}
     for code in stock_data:
         sdf = stock_data[code]
@@ -103,45 +101,32 @@ def analyze_factors(stock_data, date):
                 ret = sdf['close'].iloc[idx] / sdf['close'].iloc[idx-21] - 1
                 returns[code] = ret
 
-    # 计算 IC
     factor_ics = {}
-    orig_weights = FACTOR_WEIGHTS.copy()
-
-    for factor_name in orig_weights:
-        # 单独用这个因子打分
-        single_weight = {k: 1.0 if k == factor_name else 0.0 for k in orig_weights}
-        import src.stock_data as sd
-        sd.FACTOR_WEIGHTS = single_weight
-        single_scores = compute_stock_factors(stock_data, date)
-        sd.FACTOR_WEIGHTS = orig_weights
-
-        # 计算 IC（Spearman rank correlation）
-        common = set(single_scores.keys()) & set(returns.keys())
+    
+    # 为每个因子独立计算得分
+    for factor_name in ["low_vol", "value", "quality", "momentum_6m"]:
+        scores = _compute_single_factor(stock_data, date, factor_name)
+        
+        common = set(scores.keys()) & set(returns.keys())
         if len(common) < 20:
             factor_ics[factor_name] = {"ic": 0, "win_rate": 50}
             continue
 
-        score_list = [single_scores[c] for c in common]
+        score_list = [scores[c] for c in common]
         ret_list = [returns[c] for c in common]
 
-        # Spearman IC
-        score_rank = pd.Series(score_list).rank()
-        ret_rank = pd.Series(ret_list).rank()
-        ic = score_rank.corr(ret_rank)
+        ic = pd.Series(score_list).rank().corr(pd.Series(ret_list).rank())
 
-        # 胜率：高分前20% vs 低分后20%
         n = len(common)
         top_n = max(1, n // 5)
         sorted_idx = np.argsort(score_list)
-        top_codes = [list(common)[i] for i in sorted_idx[-top_n:]]
-        bot_codes = [list(common)[i] for i in sorted_idx[:top_n]]
-        top_ret = np.mean([returns[c] for c in top_codes])
-        bot_ret = np.mean([returns[c] for c in bot_codes])
-        win_rate = 1 if top_ret > bot_ret else 0
+        top_ret = np.mean([ret_list[i] for i in sorted_idx[-top_n:]])
+        bot_ret = np.mean([ret_list[i] for i in sorted_idx[:top_n]])
+        win_rate = 100 if top_ret > bot_ret else 0
 
         factor_ics[factor_name] = {
             "ic": round(float(ic), 4) if not np.isnan(ic) else 0,
-            "win_rate": round(win_rate * 100, 1),
+            "win_rate": round(win_rate, 1),
             "top_ret": round(float(top_ret) * 100, 2),
             "bot_ret": round(float(bot_ret) * 100, 2),
         }
@@ -149,6 +134,42 @@ def analyze_factors(stock_data, date):
     return factor_ics
 
 
+def _compute_single_factor(stock_data, date, factor_name):
+    """单独计算一个因子的得分（不依赖全局 FACTOR_WEIGHTS）"""
+    scores = {}
+    for code, df in stock_data.items():
+        if date not in df.index: continue
+        hist = df[df.index <= date].dropna()
+        if len(hist) < 250: continue
+        
+        ret_63 = hist['close'].pct_change().dropna().iloc[-63:]
+        
+        if factor_name == "low_vol":
+            if len(ret_63) >= 20:
+                vol = ret_63.std() * np.sqrt(252)
+                scores[code] = 1.0 / (vol + 0.01)
+            else:
+                scores[code] = 0
+                
+        elif factor_name == "value":
+            scores[code] = 1.0 / max(hist['close'].iloc[-1], 0.01)
+            
+        elif factor_name == "quality":
+            if len(hist) >= 500:
+                long_ret = hist['close'].iloc[-1] / hist['close'].iloc[-250] - 1
+                scores[code] = max(0, long_ret) * 2
+            else:
+                scores[code] = 0
+                
+        elif factor_name == "momentum_6m":
+            if len(hist) >= 126:
+                ret_6m = hist['close'].iloc[-1] / hist['close'].iloc[-126] - 1
+                vol_6m = hist['close'].pct_change().dropna().iloc[-126:].std()
+                scores[code] = ret_6m / vol_6m if vol_6m > 0 else ret_6m
+            else:
+                scores[code] = 0
+                
+    return scores
 def check_degradation(factor_ics):
     """检查因子退化：IC<0.02 或 胜率<55%"""
     alerts = []

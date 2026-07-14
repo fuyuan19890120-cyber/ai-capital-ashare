@@ -171,7 +171,17 @@ def main():
     print(f"\n  交易清单已保存: {trade_list_path}")
     print(f"  信号文件已保存: {SIGNAL_FILE}")
 
-    # ===== Git 自动提交（新增！）=====
+    # ===== 因子监控（Quant-Zero 方法论）=====
+    print("\n" + "=" * 60)
+    print("  Quant-Zero 因子监控")
+    print("=" * 60)
+    try:
+        from src.factor_monitor import run_monthly_monitor
+        run_monthly_monitor()
+    except Exception as e:
+        print(f"  ⚠️ 因子监控跳过: {e}")
+
+    # ===== Git 自动提交 ====
     committed = git_commit()
     if committed:
         print("  ✅ 已自动提交到 Git")
