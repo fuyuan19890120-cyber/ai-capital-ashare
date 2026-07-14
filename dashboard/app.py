@@ -26,10 +26,14 @@ st.set_page_config(
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SIGNAL_FILE = os.path.join(PROJECT_ROOT, "signals", "latest.json")
 TRACKER_FILE = os.path.join(PROJECT_ROOT, "signals", "portfolio_tracker.json")
+FACTOR_MONITOR_FILE = os.path.join(PROJECT_ROOT, "signals", "factor_monitor.json")
 HS300_CACHE = os.path.join(PROJECT_ROOT, "data", "index_sh000300.csv")
 
 REGIME_EMOJI = {"RISKON": "🟢", "NEUTRAL": "🟡", "RISKOFF": "🟠", "CRISIS": "🔴"}
 REGIME_COLORS = {"RISKON": "#2ecc71", "NEUTRAL": "#f1c40f", "RISKOFF": "#e67e22", "CRISIS": "#e74c3c"}
+
+FACTOR_NAMES = {"low_vol": "低波动率", "value": "价值", "quality": "质量", "momentum_6m": "动量"}
+FACTOR_W = {"low_vol": 30, "value": 25, "quality": 20, "momentum_6m": 25}
 
 
 # ============================================================
@@ -51,6 +55,15 @@ def load_tracker():
     if not os.path.exists(TRACKER_FILE):
         return None
     with open(TRACKER_FILE) as f:
+        return json.load(f)
+
+
+@st.cache_data(ttl=300)
+def load_factor_monitor():
+    """加载因子监控数据"""
+    if not os.path.exists(FACTOR_MONITOR_FILE):
+        return None
+    with open(FACTOR_MONITOR_FILE) as f:
         return json.load(f)
 
 
@@ -101,6 +114,7 @@ def main():
 
     signal = load_signal()
     tracker = load_tracker()
+    factor_data = load_factor_monitor()
 
     if signal is None:
         st.warning("⚠️ 尚未生成信号。请先运行 `python run_monthly.py`。")
@@ -204,6 +218,52 @@ def main():
                 st.caption("⚠️ 风控提示")
                 for w in rr['warnings']:
                     st.caption(w)
+
+    st.divider()
+
+    # ============================================================
+    # 底部：调仓历史
+    # ============================================================
+    st.divider()
+
+    # ============================================================
+    # 因子监控 (Quant-Zero)
+    # ============================================================
+    st.subheader("🔬 因子监控 (Quant-Zero)")
+
+    if factor_data and factor_data.get("records"):
+        latest = factor_data["records"][-1]["factors"]
+        cols = st.columns(4)
+        for i, fn in enumerate(["low_vol", "value", "quality", "momentum_6m"]):
+            m = latest.get(fn, {})
+            ic = m.get("ic", 0)
+            wr = m.get("win_rate", 50)
+            status = "✅" if ic > 0 else "⚠️"
+            with cols[i]:
+                st.metric(
+                    f"{status} {FACTOR_NAMES[fn]}",
+                    f"IC {ic:+.3f}",
+                    delta=f"权重 {FACTOR_W[fn]}% | 胜率 {wr:.0f}%",
+                )
+
+        alerts = factor_data["records"][-1].get("alerts", [])
+        if alerts:
+            st.warning(f"⚠️ 退化预警: {', '.join(alerts)}")
+        else:
+            st.success("✅ 所有因子正常")
+
+        records = factor_data["records"]
+        if len(records) >= 2:
+            st.caption("📈 滚动 IC 历史")
+            rows = []
+            for r in records[-6:]:
+                row = {"日期": r["date"]}
+                for fn in FACTOR_NAMES:
+                    row[FACTOR_NAMES[fn]] = f"{r['factors'].get(fn, {}).get('ic', 0):+.3f}"
+                rows.append(row)
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    else:
+        st.info("🔬 因子监控数据将在月度运行后自动生成")
 
     st.divider()
 
