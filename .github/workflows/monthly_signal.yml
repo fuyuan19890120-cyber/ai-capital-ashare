@@ -1,0 +1,82 @@
+name: 月度信号生成
+
+on:
+  schedule:
+    # 每月 28 日 15:42 北京时间（A股收市后）
+    # 自动判断是否为最后交易日
+    - cron: '42 7 28 * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: '强制运行（忽略日期检查）'
+        type: boolean
+        default: false
+
+jobs:
+  generate-signal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install akshare pandas numpy
+
+      - name: Check rebalance date
+        id: check
+        run: |
+          python3 -c "
+          from datetime import datetime, timedelta
+          import calendar
+
+          today = datetime.now()
+
+          # 判断是否为月末附近（28-31日）
+          last_day = calendar.monthrange(today.year, today.month)[1]
+          near_end = today.day >= last_day - 1
+
+          # 判断是否为A股交易日
+          try:
+              import akshare as ak
+              df = ak.stock_zh_index_daily(symbol='sh000300')
+              last_trade_date = df['date'].iloc[-1]
+              is_trade_day = str(today.date()) == str(last_trade_date)
+          except:
+              is_trade_day = True
+
+          should_run = near_end and is_trade_day
+          print(f'Today: {today.date()}, Month end: {last_day}, Near end: {near_end}, Trade day: {is_trade_day}')
+          print(f'Should run: {should_run}')
+
+          with open('$GITHUB_OUTPUT', 'a') as f:
+              f.write(f'should_run={str(should_run).lower()}\n')
+          " || echo "should_run=false" >> $GITHUB_OUTPUT
+
+      - name: Refresh data & generate signals
+        if: steps.check.outputs.should_run == 'true' || github.event.inputs.force == 'true'
+        run: |
+          python refresh_data.py
+          python run_monthly.py
+
+      - name: Commit signals to repo
+        if: steps.check.outputs.should_run == 'true' || github.event.inputs.force == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add signals/latest.json signals/portfolio_tracker.json signals/ledger.csv signals/trade_list_*.txt
+          git add data/ 2>/dev/null || true
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "📊 $(date +%Y-%m) 月度信号更新"
+            git push
+          fi

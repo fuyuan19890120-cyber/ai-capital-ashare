@@ -1,0 +1,37 @@
+{
+  "initial_capital": 1000000,
+  "current_cash": 1000000,
+  "total_invested": 0,
+  "total_return": 0.0,
+  "annual_return": 0,
+  "start_date": "2026-07-14",
+  "holdings": {},
+  "history": [
+    {
+      "date": "2026-07-13",
+      "regime": "RISKON",
+      "to_buy": [
+        "688525",
+        "300604",
+        "688120",
+        "301217",
+        "600176",
+        "688072",
+        "301377",
+        "600584",
+        "300666",
+        "301200",
+        "301526",
+        "688498",
+        "002384",
+        "688347",
+        "688702"
+      ],
+      "to_sell": [],
+      "to_hold": [],
+      "portfolio_value_before": 1000000,
+      "portfolio_value_after": 1000000,
+      "return_pct": 0.0
+    }
+  ]
+}

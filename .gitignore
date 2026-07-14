@@ -1,0 +1,35 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Data cache (too large, refreshed from AKShare each run)
+data/stocks/
+data/etf_*.csv
+data/index_*.csv
+data/fundamentals*.csv
+
+# Keep directory structure
+!data/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backtest outputs
+backtests/
+
+# Temp
+/tmp/
+*.tmp
+
+# Streamlit
+dashboard/.streamlit/secrets.toml
