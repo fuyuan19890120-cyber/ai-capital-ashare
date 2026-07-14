@@ -27,7 +27,7 @@ from src.stock_data import (
     get_csi300_constituents, fetch_stock_daily,
     compute_stock_factors, select_top_stocks,
 )
-from src.risk_manager import RiskManager, RiskLimits
+from src.risk_manager import RiskManager, RiskLimits, classify_sector
 
 # ============================================================
 # 配置
