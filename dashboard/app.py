@@ -73,6 +73,24 @@ def classify_sector(code: str) -> str:
     return '其他'
 
 
+@st.cache_data(ttl=86400)
+def get_stock_names():
+    """获取股票代码→名称映射（缓存24小时）"""
+    names = {}
+    try:
+        import akshare as ak
+        for idx in ["000300", "399006", "000688"]:
+            try:
+                df = ak.index_stock_cons(symbol=idx)
+                for _, row in df.iterrows():
+                    names[str(row['品种代码']).zfill(6)] = row['品种名称']
+            except:
+                pass
+    except:
+        pass
+    return names
+
+
 # ============================================================
 # 页面
 # ============================================================
@@ -148,12 +166,14 @@ def main():
         st.subheader(f"📋 精选个股 (Top-{len(signal.get('selected_stocks', []))})")
         stocks = signal.get('selected_stocks', [])
         if stocks:
+            name_map = get_stock_names()
             rows = []
             for s in stocks:
                 code = s['code']
                 sector = classify_sector(code)
                 rows.append({
                     '代码': code,
+                    '名称': name_map.get(code, '—'),
                     '得分': s['score'],
                     '板块': sector,
                 })
