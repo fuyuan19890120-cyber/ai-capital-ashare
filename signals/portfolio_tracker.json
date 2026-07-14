@@ -32,6 +32,32 @@
       "portfolio_value_before": 1000000,
       "portfolio_value_after": 1000000,
       "return_pct": 0.0
+    },
+    {
+      "date": "2026-07-13",
+      "regime": "RISKON",
+      "to_buy": [
+        "300604",
+        "300666",
+        "688347",
+        "688525",
+        "688702",
+        "301526",
+        "002384",
+        "600584",
+        "688120",
+        "600176",
+        "301200",
+        "301377",
+        "688072",
+        "688498",
+        "301217"
+      ],
+      "to_sell": [],
+      "to_hold": [],
+      "portfolio_value_before": 1000000,
+      "portfolio_value_after": 1000000,
+      "return_pct": 0.0
     }
   ]
 }
