@@ -227,6 +227,9 @@ def main():
         'su_base10': {'base_min': 0.10}, 'su_base20': {'base_min': 0.20},
         'su_sma20': {'sma_fast': 20}, 'su_sma40': {'sma_fast': 40},
         'su_b23': {'breadth_hi': 2/3 - 0.02}, 'su_t2': {'shift_entry': 1},
+        # 事后探索(2026-07-19 用户要求): 12组OAT里最好的两个方向的组合。
+        # ⚠️ 看完结果后的选优, 数字无论多好都不作新默认, 只能进入下一轮预注册候选
+        'su_combo2080': {'lookback': 20, 's30_min': 0.80},
     }
     for _n, _kw in _PERT.items():
         register(_n, lambda _kw=_kw: run(surge=True, surge_kw=_kw))
