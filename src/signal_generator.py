@@ -68,6 +68,9 @@ def compute_regime(benchmark_close, etf_prices=None):
     lock_active = False
     if etf_prices is not None:
         lock_active = _check_breadth_lock(benchmark_close, etf_prices)
+    # 日频监控的持久化锁状态(surge_monitor.py 维护): 月中触发的锁在月末调仓时生效
+    if not lock_active:
+        lock_active = _surge_state_active()
 
     if lock_active:
         total = max(total, 0.72)  # 强制至少RISKON
@@ -91,6 +94,28 @@ def compute_regime(benchmark_close, etf_prices=None):
         'deviation_pct': round(float(dev * 100), 1),
         'lock_active': lock_active,
     }
+
+
+def _surge_state_active():
+    """读取 surge_monitor.py 持久化的锁状态; 缺文件/过期/超过3天未刷新均视为不活跃"""
+    import json
+    from datetime import datetime, timedelta
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "signals", "surge_state.json")
+    try:
+        with open(path) as f:
+            st = json.load(f)
+        if not st.get("active"):
+            return False
+        today = datetime.now().date()
+        if st.get("expire_date") and str(today) > st["expire_date"]:
+            return False
+        checked = datetime.strptime(st.get("checked_date", "1970-01-01"), "%Y-%m-%d").date()
+        if today - checked > timedelta(days=3):  # 监控断更超3天, 不信任陈旧锁
+            return False
+        return True
+    except Exception:
+        return False
 
 
 def _check_breadth_lock(benchmark_close, etf_prices):

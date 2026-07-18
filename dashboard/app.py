@@ -27,7 +27,13 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SIGNAL_FILE = os.path.join(PROJECT_ROOT, "signals", "latest.json")
 TRACKER_FILE = os.path.join(PROJECT_ROOT, "signals", "portfolio_tracker.json")
 FACTOR_MONITOR_FILE = os.path.join(PROJECT_ROOT, "signals", "factor_monitor.json")
+SURGE_FILE = os.path.join(PROJECT_ROOT, "signals", "surge_state.json")
 HS300_CACHE = os.path.join(PROJECT_ROOT, "data", "index_sh000300.csv")
+
+STRATEGY_VERSION = "V4.1 定稿 (2026-07-19)"
+# 审计定稿口径(reports/final_strategy_v4.1.md): 可信预期为纯时点CSI300宇宙的数字
+EXPECTATION_NOTE = ("可信预期: 年化 ~9-12% + SURGE 增量 2-4pp | 最大回撤 -30% 量级 | "
+                    "旧宣称 +22.9% 已被审计推翻(不可复现)")
 
 REGIME_EMOJI = {"RISKON": "🟢", "NEUTRAL": "🟡", "RISKOFF": "🟠", "CRISIS": "🔴"}
 REGIME_COLORS = {"RISKON": "#2ecc71", "NEUTRAL": "#f1c40f", "RISKOFF": "#e67e22", "CRISIS": "#e74c3c"}
@@ -64,6 +70,15 @@ def load_factor_monitor():
     if not os.path.exists(FACTOR_MONITOR_FILE):
         return None
     with open(FACTOR_MONITOR_FILE) as f:
+        return json.load(f)
+
+
+@st.cache_data(ttl=300)
+def load_surge():
+    """加载日频 SURGE 锁状态(surge_monitor.py 维护)"""
+    if not os.path.exists(SURGE_FILE):
+        return None
+    with open(SURGE_FILE) as f:
         return json.load(f)
 
 
@@ -110,7 +125,8 @@ def get_stock_names():
 
 def main():
     st.title("📊 AI Capital A-Share")
-    st.caption(f"量化策略 Dashboard — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    st.caption(f"量化策略 Dashboard — {STRATEGY_VERSION} — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    st.caption(EXPECTATION_NOTE)
 
     signal = load_signal()
     tracker = load_tracker()
@@ -141,6 +157,25 @@ def main():
     with col5:
         n_stocks = len(signal.get('selected_stocks', []))
         st.metric("持仓数", f"{n_stocks} 只")
+
+    # ===== SURGE 状态条(日频广度SMA30锁定, surge_monitor.py 维护) =====
+    surge = load_surge()
+    if surge:
+        d = surge.get('detail', {})
+        sh = surge.get('shadow', {})
+        if surge.get('active'):
+            st.success(f"🚨 SURGE 锁定中: 强制 RISKON | 触发 {surge.get('trigger_date')} → "
+                       f"到期 {surge.get('expire_date')} | 广度 {d.get('breadth_now', 0):.0%} "
+                       f"s30分 {d.get('s30', 0):.3f}")
+        else:
+            st.caption(f"⚡ SURGE 未触发(检查于 {surge.get('checked_date', '—')}) | "
+                       f"广度 {d.get('breadth_now', 0):.0%}(15日前 {d.get('breadth_prev', 0):.0%}) "
+                       f"s30分 {d.get('s30', 0):.3f} 基础分 {d.get('base', 0):.3f}")
+        if bool(sh.get('active')) != bool(surge.get('active')):
+            st.warning(f"⚖️ 影子候选(20d/0.80)与正式信号分歧: 正式锁={surge.get('active')} "
+                       f"影子锁={sh.get('active')} —— 天然裁决样本, 记录复盘")
+    else:
+        st.caption("⚡ SURGE 监控尚未运行(surge_monitor.py, 工作日15:35 自动)")
 
     st.divider()
 

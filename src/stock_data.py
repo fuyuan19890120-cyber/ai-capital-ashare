@@ -146,6 +146,11 @@ def compute_stock_factors(stock_data, date, pe_data=None):
     date: 当前调仓日期
     pe_data: {code: PE_series}（可选，从估值数据获取）
 
+    ⚠️ 审计警示(2026-07-18): 生产链路(signal_generator/stock_backtest)均未传 pe_data,
+    此时 value 退化为 low_vol*0.5、quality 是 250 日动量 —— 实际敞口 ≈ 低波43% + 动量45%,
+    并非宣称的"低波30/价值25/质量20/动量25"。接入真实 PE/ROE(按披露日对齐)前,
+    对本策略的一切讨论按"低波+动量组合"理解。详见 reports/v4_audit_fix_report.md。
+
     返回: {code: score}
     """
     scores = {}
