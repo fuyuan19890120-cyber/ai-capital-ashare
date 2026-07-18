@@ -6,6 +6,9 @@ on:
     - cron: '35 7 * * 1-5'
   workflow_dispatch: {}
 
+permissions:
+  contents: write
+
 jobs:
   surge-monitor:
     runs-on: ubuntu-latest
