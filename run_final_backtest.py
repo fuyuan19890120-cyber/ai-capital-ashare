@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
-"""最终个股版回测 — 直接跑，出结果"""
-import os, sys, warnings, json
+"""最终个股版回测 — 直接跑，出结果
+
+2026-07-18 审计修复版, 三种模式用于逐项归因:
+  --mode legacy    复现旧版(前400只宇宙+信号日收盘成交+无印花税+停牌计0) — 仅对照
+  --mode universe  只修宇宙(全部缓存个股), 其余同旧版 — 隔离宇宙bug的影响
+  --mode fixed     全修复(默认): 全宇宙 + T+1开盘成交 + 印花税 + 涨跌停约束 + 停牌估值修复
+"""
+import os, sys, warnings, json, argparse
 warnings.filterwarnings('ignore')
 import pandas as pd
 import numpy as np
@@ -12,22 +18,34 @@ DATA_DIR = os.path.expanduser("~/ai-capital-ashare/data")
 from config import START_DATE
 from src.stock_backtest import run_stock_backtest
 
+ETF_FILES = {
+    'sh510300': 'etf_510300.csv', 'sh510500': 'etf_510500.csv',
+    'sz159915': 'etf_159915.csv', 'sh588000': 'etf_588000.csv',
+    'sh511010': 'etf_511010.csv', 'sh511220': 'etf_511220.csv',
+    'sh518880': 'etf_518880.csv', 'sh511880': 'etf_511880.csv',
+}
 
-def load_etf_close():
-    etf_files = {
-        'sh510300': 'etf_510300.csv', 'sh510500': 'etf_510500.csv',
-        'sz159915': 'etf_159915.csv', 'sh588000': 'etf_588000.csv',
-        'sh511010': 'etf_511010.csv', 'sh511220': 'etf_511220.csv',
-        'sh518880': 'etf_518880.csv', 'sh511880': 'etf_511880.csv',
-    }
-    etf_data = {}
-    for code, fname in etf_files.items():
+
+def load_etf_prices(calendar_fix=True):
+    """返回 (close宽表, open宽表)
+
+    calendar_fix=True: dropna(how='all') 保留完整日历。
+    False 复刻旧行为 dropna() —— etf_588000(2020-11起)存在时整个回测被静默截断,
+    这是审计新发现的 bug, 仅供 legacy 模式忠实复现。
+    """
+    closes, opens = {}, {}
+    for code, fname in ETF_FILES.items():
         path = os.path.join(DATA_DIR, fname)
         if os.path.exists(path):
             df = pd.read_csv(path, index_col=0, parse_dates=True)
             if 'close' in df.columns and not df.empty:
-                etf_data[code] = df['close']
-    return pd.DataFrame(etf_data).sort_index().dropna()
+                closes[code] = df['close']
+                if 'open' in df.columns:
+                    opens[code] = df['open']
+    wide = pd.DataFrame(closes).sort_index()
+    df_close = wide.dropna(how='all') if calendar_fix else wide.dropna()
+    df_open = pd.DataFrame(opens).sort_index().reindex(df_close.index)
+    return df_close, df_open
 
 
 def load_index():
@@ -36,11 +54,15 @@ def load_index():
     return pd.read_csv(path, index_col=0, parse_dates=True)
 
 
-def load_stocks(limit=400):
+def load_stocks(limit=None):
+    """limit=None 加载全部缓存个股(修复: 旧版 limit=400 按文件名截断, 无沪市/科创票)"""
     d = os.path.join(DATA_DIR, "stocks")
     if not os.path.exists(d): return {}
     result = {}
-    for f in sorted(os.listdir(d))[:limit]:
+    files = sorted(os.listdir(d))
+    if limit:
+        files = files[:limit]
+    for f in files:
         if not f.endswith('.csv'): continue
         try:
             df = pd.read_csv(os.path.join(d, f), index_col=0, parse_dates=True)
@@ -62,17 +84,31 @@ def compute_regime(benchmark_close):
     return scores.dropna()
 
 
+MODES = {
+    # (calendar_fix, limit, execution, stamp_duty, ffill_valuation) — 逐项叠加的归因链
+    'legacy':   (False, 400,  'same_close', False, False),  # 忠实复刻旧代码+当前数据(被588000截断到2020-11)
+    'calendar': (True,  400,  'same_close', False, False),  # +日历修复(≈原始+22.9%运行时的数据环境)
+    'universe': (True,  None, 'same_close', False, False),  # +宇宙修复(全部缓存个股)
+    'fixed':    (True,  None, 'next_open',  True,  True),   # +执行/印花税/涨跌停/停牌估值(新基线)
+}
+
+
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--mode', choices=list(MODES), default='fixed')
+    args = ap.parse_args()
+    calendar_fix, limit, execution, stamp, ffill = MODES[args.mode]
+
     print("=" * 55)
-    print("  最终个股版回测")
+    print(f"  最终个股版回测  [mode={args.mode}]")
     print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print("=" * 55)
 
     # 数据
     print("\n加载数据...")
-    df_close = load_etf_close()
+    df_close, df_open = load_etf_prices(calendar_fix)
     index_df = load_index()
-    stock_data = load_stocks(400)
+    stock_data = load_stocks(limit)
 
     print(f"  ETF: {df_close.index[0].date()} ~ {df_close.index[-1].date()} ({len(df_close)} 行)")
     print(f"  沪深300: {index_df.index[0].date()} ~ {index_df.index[-1].date()} ({len(index_df)} 行)")
@@ -84,7 +120,8 @@ def main():
 
     # 跑
     result = run_stock_backtest(
-        df_close, regime_series, stock_data, top_n=15, verbose=True
+        df_close, regime_series, stock_data, top_n=15, verbose=True,
+        execution=execution, stamp_duty=stamp, ffill_valuation=ffill, df_open=df_open,
     )
 
     m = result['metrics']
@@ -109,11 +146,12 @@ def main():
                 print(f"    {yr}: {bar} {ret:+.1f}%")
 
     # 保存
-    out = os.path.join(os.path.dirname(__file__), "backtests", "final_result.json")
+    out = os.path.join(os.path.dirname(__file__), "backtests", f"final_result_{args.mode}.json")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, 'w') as f:
         json.dump({
             'date': datetime.now().strftime('%Y-%m-%d'),
+            'mode': args.mode,
             'metrics': {k: v for k, v in m.items() if k != 'annual_returns'},
             'annual_returns': dict(m['annual_returns']) if hasattr(m['annual_returns'], 'items') else {},
         }, f, ensure_ascii=False, indent=2, default=str)
