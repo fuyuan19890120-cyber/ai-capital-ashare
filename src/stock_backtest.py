@@ -48,6 +48,7 @@ def run_stock_backtest(
     select_fn=None,          # 自定义选股: select_fn(date)->[code,...]; None=旧四因子路径
     equity_scale=None,       # {调仓日: 系数} 条件式波动率目标, 权益仓位乘数(余量转现金ETF)
     downgrade_exec=None,     # {执行日: 目标权益占比} 回撤棘轮: 当日开盘将个股仓位比例降至目标, 停泊现金ETF
+    forced_regime=None,      # {调仓日: 档位} 覆盖制度判断(广度SMA30锁定用, 如强制'RISKON')
 ):
     """
     个股增强回测
@@ -103,6 +104,7 @@ def run_stock_backtest(
         monthly_dates = pd.DatetimeIndex([d for d in rebalance_dates if d in df_close.index])
     equity_scale = equity_scale or {}
     downgrade_exec = downgrade_exec or {}
+    forced_regime = forced_regime or {}
 
     if verbose:
         print(f"Stock Backtest: {df_close.index[0].date()} ~ {df_close.index[-1].date()}")
@@ -306,6 +308,8 @@ def run_stock_backtest(
                 else: regime = 'CRISIS'
             else:
                 regime = 'NEUTRAL'
+            if date in forced_regime:  # 广度SMA30锁定等覆盖机制
+                regime = forced_regime[date]
 
             if verbose and len(rebalance_log) <= 3:
                 print(f"  {date.date()}: regime={regime}")

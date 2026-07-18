@@ -93,6 +93,53 @@ def build_cond_vol_scale(index_close, rebal_dates):
     return out
 
 
+SURGE_LOCK_DAYS = 21  # 锁定交易日数(修复了旧ETF回测里按月递减≈21个月的bug)
+
+
+def build_surge_lock(index_close, etf_close, regime_series, cal, rebal_dates):
+    """
+    广度SMA30锁定进场(口径移植自实盘 src/signal_generator.py:_check_breadth_lock):
+      触发(三条同时): ①3只权益ETF站上各自SMA50比例 15个交易日前<33% 且 当日>67%
+                      ②SMA30制度分(金叉项用 sma50>sma30)≥0.70  ③SMA250制度分≥0.15
+      触发后: 强制 RISKON 锁定 21 个交易日(锁内月末调仓也强制 RISKON), 期满恢复 SMA250。
+      加速进场: 若触发时上一调仓档位非 RISKON, 触发日作为额外调仓日(T收盘信号, T+1开盘进场)。
+      锁定期内忽略新触发(不展期, 与实盘无状态实现一致)。
+    返回 (额外调仓日 DatetimeIndex, {调仓日: 'RISKON'})
+    """
+    eq_etfs = ['sh510300', 'sh510500', 'sz159915']
+    sma30 = index_close.rolling(30).mean()
+    sma50 = index_close.rolling(50).mean()
+    dev30 = (index_close - sma30) / sma30
+    s30 = 0.6 * (0.5 + 0.5 * np.tanh(dev30 * 10)) + 0.4 * (sma50 > sma30).astype(float)
+    breadth = pd.DataFrame({
+        e: (etf_close[e] > etf_close[e].rolling(50).mean()).astype(float)
+        for e in eq_etfs if e in etf_close.columns}).mean(axis=1)
+    s30 = s30.reindex(cal)
+    breadth = breadth.reindex(cal)
+    base = regime_series.reindex(cal)
+    trig = (base >= 0.15) & (s30 >= 0.70) & (breadth > 2 / 3) & (breadth.shift(15) < 1 / 3)
+
+    rebal_set = set(rebal_dates)
+    extra, forced = [], {}
+    lock_until = -1
+    last_regime = 'NEUTRAL'
+    for i, d in enumerate(cal):
+        if i <= lock_until:
+            if d in rebal_set:
+                forced[d] = 'RISKON'
+                last_regime = 'RISKON'
+            continue
+        if d in rebal_set and d in regime_series.index:
+            last_regime = regime_of(float(regime_series.loc[d]))
+        if bool(trig.get(d, False)):
+            lock_until = i + SURGE_LOCK_DAYS - 1
+            forced[d] = 'RISKON'
+            if last_regime != 'RISKON' and d not in rebal_set:
+                extra.append(d)
+            last_regime = 'RISKON'
+    return pd.DatetimeIndex(extra), forced
+
+
 def metrics_from_values(dfv):
     r = dfv['value'].pct_change().dropna()
     nav = (1 + r).cumprod()
@@ -136,19 +183,23 @@ def main():
     def sf(**kw):
         return factors_v5.build_select_fn(stock_data, cal, aux, qroe, **kw)
 
-    def run(select_fn=None, rebal=None, ratchet=False, condvol=False, top_n=15):
+    def run(select_fn=None, rebal=None, ratchet=False, condvol=False, top_n=15, surge=False):
         rd = rebal if rebal is not None else me_dates
+        forced = None
+        if surge:
+            extra, forced = build_surge_lock(index_df['close'], df_close, regime_series, cal, rd)
+            rd = pd.DatetimeIndex(sorted(set(rd) | set(extra)))
         dg = build_ratchet(index_df['close'], regime_series, cal, rd) if ratchet else None
         es = build_cond_vol_scale(index_df['close'], rd) if condvol else None
         r = run_stock_backtest(df_close, regime_series, stock_data, top_n=top_n, verbose=False,
                                execution='next_open', stamp_duty=True, ffill_valuation=True,
                                df_open=df_open, rebalance_dates=rd, select_fn=select_fn,
-                               equity_scale=es, downgrade_exec=dg)
+                               equity_scale=es, downgrade_exec=dg, forced_regime=forced)
         return r
 
     variants = {}
     def register(name, fn):
-        if args.variant in ('all', name):
+        if args.variant == 'all' or name in args.variant.split(','):
             variants[name] = fn
 
     register('v4fixed', lambda: run())
@@ -162,6 +213,9 @@ def main():
     register('sens_top20', lambda: run(select_fn=sf(cap_neutral=True, top_n=20), top_n=20))
     register('sens_rev30', lambda: run(select_fn=sf(cap_neutral=True, reversal_pct=0.30)))
     register('sens_lowvol120', lambda: run(select_fn=sf(cap_neutral=True, low_vol_window=120)))
+    # 广度SMA30锁定进场(用户既有设计, 移植实盘口径, 预注册两组)
+    register('v4fixed_surge', lambda: run(surge=True))
+    register('v5_surge', lambda: run(select_fn=sf(cap_neutral=True), surge=True))
 
     results = {}
     for name, fn in variants.items():
@@ -185,7 +239,8 @@ def main():
             print(f"  [v5_tranche] 年化 {mt['ann']}% 回撤 {mt['mdd']}% 夏普 {mt['sharpe']}")
             print(f"  [v5_tranche] 分时段 {mt['sub']}")
 
-    out = os.path.join(os.path.dirname(__file__), 'backtests', 'v5_results.json')
+    suffix = '' if args.variant == 'all' else '_' + args.variant.replace(',', '_')[:40]
+    out = os.path.join(os.path.dirname(__file__), 'backtests', f'v5_results{suffix}.json')
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, 'w') as f:
         json.dump(results, f, ensure_ascii=False, indent=2, default=str)
