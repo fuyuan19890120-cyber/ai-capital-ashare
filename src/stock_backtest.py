@@ -44,6 +44,10 @@ def run_stock_backtest(
     stamp_duty=True,         # 个股卖出印花税(旧版=False)
     ffill_valuation=True,    # 停牌日按最后收盘价估值(旧版=False, 计0)
     df_open=None,            # ETF开盘价(execution='next_open'时使用, 缺列回退close)
+    rebalance_dates=None,    # 自定义调仓日(DatetimeIndex); None=每月最后交易日
+    select_fn=None,          # 自定义选股: select_fn(date)->[code,...]; None=旧四因子路径
+    equity_scale=None,       # {调仓日: 系数} 条件式波动率目标, 权益仓位乘数(余量转现金ETF)
+    downgrade_exec=None,     # {执行日: 目标权益占比} 回撤棘轮: 当日开盘将个股仓位比例降至目标, 停泊现金ETF
 ):
     """
     个股增强回测
@@ -85,15 +89,20 @@ def run_stock_backtest(
     cash = initial_capital
     positions = {}  # {symbol: shares}
     portfolio_values = []
-    rebalance_dates = []
+    rebalance_log = []  # 实际发生的调仓日(勿与同名参数混淆)
     skipped_trades = {"buy_limit_up": 0, "buy_suspended": 0, "sell_deferred": 0}
     turnover_value = 0.0  # 累计成交额(双边), 供换手率审计
 
     pending_rebalance = None  # (target_weights, base_value) 待次日开盘执行
     pending_sells = set()     # 停牌/跌停未卖出, 逐日重试
 
-    monthly_dates = df_close.groupby(df_close.index.to_period('M')).apply(lambda x: x.index[-1])
-    monthly_dates = pd.DatetimeIndex(monthly_dates)
+    if rebalance_dates is None:
+        monthly_dates = df_close.groupby(df_close.index.to_period('M')).apply(lambda x: x.index[-1])
+        monthly_dates = pd.DatetimeIndex(monthly_dates)
+    else:
+        monthly_dates = pd.DatetimeIndex([d for d in rebalance_dates if d in df_close.index])
+    equity_scale = equity_scale or {}
+    downgrade_exec = downgrade_exec or {}
 
     if verbose:
         print(f"Stock Backtest: {df_close.index[0].date()} ~ {df_close.index[-1].date()}")
@@ -216,6 +225,54 @@ def run_stock_backtest(
                     else:
                         pending_sells.discard(sym)
 
+        # === 回撤棘轮: 触发日次日开盘将个股仓位降至目标占比, 停泊现金ETF ===
+        if date in downgrade_exec and pending_rebalance is None:
+            target_frac = downgrade_exec[date]
+            eq_val, port_val = 0.0, cash
+            for sym, shares in positions.items():
+                if is_stock(sym):
+                    p = prev_close_ffill.at[date, sym]  # 用前收测算, 避免偷看当日收盘(复审 C5)
+                else:
+                    s = df_close[sym].loc[:date].dropna() if sym in df_close.columns else None
+                    if s is not None and len(s) and s.index[-1] == date:
+                        s = s.iloc[:-1]
+                    p = s.iloc[-1] if s is not None and len(s) else None
+                if p is not None and pd.notna(p):
+                    v = shares * float(p)
+                    port_val += v
+                    if is_stock(sym):
+                        eq_val += v
+            if port_val > 0 and eq_val / port_val > target_frac + 0.02:
+                sell_ratio = 1.0 - (target_frac * port_val) / eq_val
+                freed = 0.0
+                for sym in [s for s in positions if is_stock(s)]:
+                    px = exec_price(sym, date, use_open=True)
+                    if px is None or px <= 0:
+                        continue  # 停牌卖不出, 保守: 不强平
+                    prev = prev_close_ffill.at[date, sym]
+                    if pd.notna(prev) and prev > 0:
+                        lim = _price_limit(sym, date)
+                        if px / float(prev) - 1 <= -(lim - 0.002):
+                            continue  # 开盘贴跌停
+                    lot = int(positions[sym] * sell_ratio / 100) * 100
+                    if lot >= 100:
+                        cash_before = cash
+                        do_sell(sym, lot, px, date)
+                        freed += cash - cash_before
+                        positions[sym] -= lot
+                        if positions[sym] == 0:
+                            del positions[sym]
+                # 释放资金停泊现金ETF
+                pk = exec_price(cash_etf, date, use_open=True)
+                if pk and pk > 0 and freed > 0:
+                    lots = int(freed / pk / 100) * 100
+                    if lots > 0:
+                        cost = lots * pk * 1.00125
+                        if cost <= cash:
+                            cash -= cost
+                            turnover_value += lots * pk
+                            positions[cash_etf] = positions.get(cash_etf, 0) + lots
+
         today_prices = df_close.loc[date]
 
         # === 收盘估值 ===
@@ -238,7 +295,7 @@ def run_stock_backtest(
 
         # === 月末收盘: 出信号 ===
         if date in monthly_dates and i >= warmup_days:
-            rebalance_dates.append(date)
+            rebalance_log.append(date)
 
             # Get regime
             if regime_series is not None and date in regime_series.index:
@@ -250,41 +307,48 @@ def run_stock_backtest(
             else:
                 regime = 'NEUTRAL'
 
-            if verbose and len(rebalance_dates) <= 3:
+            if verbose and len(rebalance_log) <= 3:
                 print(f"  {date.date()}: regime={regime}")
 
             alloc = allocation[regime]
+            # 条件式波动率目标: 高波动五分位时缩权益, 余量转现金ETF
+            es = float(equity_scale.get(date, 1.0))
+            eq_w = alloc['equity'] * min(es, 1.0)
+            extra_cash = alloc['equity'] - eq_w
 
             # === Stock Selection (during RISKON/NEUTRAL/RISKOFF) ===
             selected_stocks = []
-            if alloc['equity'] > 0 and stock_data:
-                # Filter ST stocks
-                valid_stocks = {}
-                for code, sdf in stock_data.items():
-                    if st_filter and code in st_filter:
-                        continue
-                    if date in sdf.index and len(sdf[sdf.index <= date]) >= 250:
-                        valid_stocks[code] = sdf
-                if valid_stocks:
-                    scores = compute_stock_factors(valid_stocks, date)
-                    selected_stocks = select_top_stocks(scores, top_n)
+            if eq_w > 0 and stock_data:
+                if select_fn is not None:
+                    selected_stocks = select_fn(date)
+                else:
+                    # Filter ST stocks
+                    valid_stocks = {}
+                    for code, sdf in stock_data.items():
+                        if st_filter and code in st_filter:
+                            continue
+                        if date in sdf.index and len(sdf[sdf.index <= date]) >= 250:
+                            valid_stocks[code] = sdf
+                    if valid_stocks:
+                        scores = compute_stock_factors(valid_stocks, date)
+                        selected_stocks = select_top_stocks(scores, top_n)
 
             # === Build Target Weights ===
             target_weights = {}
             if regime == 'CRISIS' or not selected_stocks:
                 target_weights[bond_etf] = alloc['bond']
                 target_weights[gold_etf] = alloc['gold']
-                target_weights[cash_etf] = alloc['cash']
+                target_weights[cash_etf] = alloc['cash'] + (alloc['equity'] if regime != 'CRISIS' else 0)
             else:
-                per_stock_weight = alloc['equity'] / len(selected_stocks)
+                per_stock_weight = eq_w / len(selected_stocks)
                 for code in selected_stocks:
                     target_weights[code] = per_stock_weight
                 if alloc['bond'] > 0:
                     target_weights[bond_etf] = alloc['bond']
                 if alloc['gold'] > 0:
                     target_weights[gold_etf] = alloc['gold']
-                if alloc['cash'] > 0:
-                    target_weights[cash_etf] = alloc['cash']
+                if alloc['cash'] + extra_cash > 0:
+                    target_weights[cash_etf] = alloc['cash'] + extra_cash
 
             # === Execute ===
             if execution == "next_open":
@@ -320,5 +384,5 @@ def run_stock_backtest(
             "skipped_trades": dict(skipped_trades),
             "annual_returns": annual_returns,
         },
-        "rebalance_dates": rebalance_dates,
+        "rebalance_dates": rebalance_log,
     }
