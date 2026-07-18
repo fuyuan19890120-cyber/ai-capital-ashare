@@ -34,12 +34,17 @@ import pandas as pd
 BASE = os.path.dirname(os.path.abspath(__file__))
 STATE_PATH = os.path.join(BASE, "signals", "surge_state.json")
 
-# 预注册参数(与回测/实盘口径一致, 勿因单次回测调整; 0.80 严确认版是候选、非默认)
+# 预注册参数(与回测/实盘口径一致, 勿因单次回测调整)
 LOOKBACK = 15        # 广度回看交易日
 LOCK_DAYS = 21       # 锁定交易日
 S30_MIN = 0.70       # SMA30 制度分阈值
 BASE_MIN = 0.15      # SMA250 制度分底线
 EQ_ETFS = {"sh510300": "510300", "sh510500": "510500", "sz159915": "159915"}
+
+# 影子候选(2026-07-19): 20d回看+0.80严确认。扰动敏感性+跨池迁移验证通过,
+# 但触发日期与默认版高度重叠(指数级信号), 需等实盘出现"默认触发而影子未触发"
+# 的分歧样本才能转正。只记录, 不影响正式信号。
+SHADOW = {"lookback": 20, "s30_min": 0.80}
 
 
 def fetch_daily():
@@ -105,8 +110,13 @@ def main():
     base = regime_score(idx, 250)
     s30 = regime_score(idx, 30)
     b_now = breadth_at(etfs, 0)
-    b_prev = breadth_at(etfs, LOOKBACK)
-    trig = (base >= BASE_MIN) and (s30 >= S30_MIN) and (b_now > 2 / 3) and (b_prev < 1 / 3)
+
+    def evaluate(lookback, s30_min):
+        b_prev = breadth_at(etfs, lookback)
+        return (base >= BASE_MIN) and (s30 >= s30_min) and (b_now > 2 / 3) and (b_prev < 1 / 3), b_prev
+
+    trig, b_prev = evaluate(LOOKBACK, S30_MIN)
+    trig_shadow, b_prev_sh = evaluate(SHADOW["lookback"], SHADOW["s30_min"])
 
     state = load_state()
     # 到期检查(按指数日历数交易日)
@@ -132,6 +142,22 @@ def main():
     state["checked_date"] = today
     state["detail"] = {"breadth_now": round(b_now, 3), "breadth_prev": round(b_prev, 3),
                        "s30": round(s30, 3), "base": round(base, 3)}
+
+    # ===== 影子候选(20d/0.80)记录, 不影响正式信号 =====
+    sh = state.get("shadow", {"active": False, "trigger_date": None, "expire_date": None})
+    if sh.get("active") and sh.get("expire_date") and today >= sh["expire_date"]:
+        sh = {"active": False, "trigger_date": None, "expire_date": None}
+    if trig_shadow and not sh.get("active"):
+        sh = {"active": True, "trigger_date": today,
+              "expire_date": str((idx.index[-1] + pd.Timedelta(days=29)).date())}
+        print(f"[{today}] 🌓 影子候选(20d/0.80)触发")
+    # 分歧样本 = 转正/否决的天然裁决证据, 高亮记录
+    if trig != trig_shadow or bool(state.get("active")) != bool(sh.get("active")):
+        print(f"[{today}] ⚖️ 分歧样本! 正式(15d/0.70): 触发={trig} 锁={state.get('active')} | "
+              f"影子(20d/0.80): 触发={trig_shadow} 锁={sh.get('active')} —— 记录留证, 事后复盘裁决")
+    sh["last_trig"] = bool(trig_shadow)
+    state["shadow"] = sh
+
     if not args.dry:
         os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
         with open(STATE_PATH, "w") as f:
