@@ -6,7 +6,7 @@ Obsidian 交易记录模块 v2
 import os, json
 from datetime import datetime
 
-VAULT_DIR = "/Users/fuyuan/Documents/Obsidian Vault/项目/量化/策略1 - AI-Capital 动量制度检测"
+VAULT_DIR = "/Users/fuyuan/Documents/Obsidian Vault/项目/量化/策略1 - AI-Capital"  # 2026-07-19 修复: 原路径指向不存在的目录
 TRADE_LOG_DIR = os.path.join(VAULT_DIR, "交易记录")
 SUMMARY_FILE = os.path.join(TRADE_LOG_DIR, "收益汇总.md")
 TRACKER_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "signals", "portfolio_tracker.json")
