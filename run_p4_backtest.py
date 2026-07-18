@@ -25,8 +25,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import START_DATE
 from src.stock_backtest import run_stock_backtest
 from src.stock_data import compute_stock_factors, select_top_stocks
-from run_final_backtest import load_etf_prices, load_index, compute_regime
-from run_v5_backtest import month_end_dates, metrics_from_values, build_surge_lock
+from run_final_backtest import load_etf_prices, load_index
+from run_v5_backtest import month_end_dates, metrics_from_values, build_surge_lock, build_ratchet
 
 QLIB = os.path.expanduser("~/ai-capital-ashare/data/qlib_cn/qlib_bin")
 
@@ -126,10 +126,22 @@ def main():
     ap.add_argument("--variant", default="p4_v4fixed,p4_v4fixed_surge")
     args = ap.parse_args()
 
+    def compute_regime_w(close, slow=250):
+        """基础制度分, slow=慢线窗口(默认250, OAT: 120/180/200)"""
+        sma50 = close.rolling(50).mean()
+        sma_s = close.rolling(slow).mean()
+        scores = pd.Series(index=close.index, dtype=float)
+        for i in range(max(252, slow + 2), len(close)):
+            dev = (close.iloc[i] - sma_s.iloc[i]) / sma_s.iloc[i]
+            trend = 0.5 + 0.5 * np.tanh(dev * 10)
+            golden = 1.0 if sma50.iloc[i] > sma_s.iloc[i] else 0.0
+            scores.iloc[i] = 0.6 * trend + 0.4 * golden
+        return scores.dropna()
+
     cal_q = load_calendar()
     df_close, df_open = load_etf_prices(True)
     index_df = load_index()
-    regime_series = compute_regime(index_df["close"])
+    regime_series = compute_regime_w(index_df["close"])
     cal = df_close.index[df_close.index >= START_DATE]
     me_dates = month_end_dates(cal)
 
@@ -146,7 +158,13 @@ def main():
         return any(s <= d <= e for s, e in segs)
     sel_csi300 = make_select_fn(stock_data, member_csi300)
     SELECTORS = {"p4_v4fixed": sel, "p4_v4fixed_surge": sel,
-                 "p4_oldpool": sel_oldpool, "p4_csi300": sel_csi300}
+                 "p4_oldpool": sel_oldpool, "p4_csi300": sel_csi300,
+                 "p4_csi300_surge": sel_csi300, "p4_csi300_combo": sel_csi300,
+                 "p4_csi300_ratchet": sel_csi300, "p4_csi300_surge_ratchet": sel_csi300,
+                 "p4_csi300_sma120": sel_csi300, "p4_csi300_sma180": sel_csi300,
+                 "p4_csi300_sma200": sel_csi300}
+    # _combo = SURGE 候选参数(回看20d + s30阈值0.80), 在可信宇宙上做伪样本外验证
+    SURGE_KW = {"p4_csi300_combo": {"lookback": 20, "s30_min": 0.80}}
     # 宇宙规模抽样
     for y in ["2016-06-30", "2020-06-30", "2025-06-30"]:
         d = cal[cal.get_indexer([pd.Timestamp(y)], method="nearest")[0]]
@@ -155,18 +173,24 @@ def main():
 
     results = {}
     for name in args.variant.split(","):
-        surge = name.endswith("_surge")
+        rs_use = regime_series
+        if "_sma" in name:  # 基础窗口 OAT: p4_csi300_sma120/180/200
+            w = int(name.split("_sma")[1])
+            rs_use = compute_regime_w(index_df["close"], slow=w)
+        surge = "_surge" in name or name.endswith("_combo")
         rd = me_dates
         forced = None
         if surge:
-            extra, forced = build_surge_lock(index_df["close"], df_close, regime_series, cal, rd)
+            extra, forced = build_surge_lock(index_df["close"], df_close, rs_use, cal, rd,
+                                             **SURGE_KW.get(name, {}))
             rd = pd.DatetimeIndex(sorted(set(rd) | set(extra)))
+        dg = build_ratchet(index_df["close"], rs_use, cal, rd) if "_ratchet" in name else None
         print(f"\n===== {name} =====", flush=True)
-        r = run_stock_backtest(df_close, regime_series, stock_data, top_n=15, verbose=False,
+        r = run_stock_backtest(df_close, rs_use, stock_data, top_n=15, verbose=False,
                                execution="next_open", stamp_duty=True, ffill_valuation=True,
                                df_open=df_open, rebalance_dates=rd,
                                select_fn=SELECTORS.get(name, sel),
-                               forced_regime=forced)
+                               forced_regime=forced, downgrade_exec=dg)
         m = metrics_from_values(r["values"])
         m["turnover"] = round(r["metrics"].get("annual_turnover_x", np.nan), 1)
         ret = r["values"]["value"].pct_change().dropna()
