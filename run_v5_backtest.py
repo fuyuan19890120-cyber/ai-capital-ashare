@@ -96,7 +96,9 @@ def build_cond_vol_scale(index_close, rebal_dates):
 SURGE_LOCK_DAYS = 21  # 锁定交易日数(修复了旧ETF回测里按月递减≈21个月的bug)
 
 
-def build_surge_lock(index_close, etf_close, regime_series, cal, rebal_dates):
+def build_surge_lock(index_close, etf_close, regime_series, cal, rebal_dates,
+                     lookback=15, lock_days=SURGE_LOCK_DAYS, s30_min=0.70,
+                     base_min=0.15, sma_fast=30, breadth_hi=2/3, shift_entry=0):
     """
     广度SMA30锁定进场(口径移植自实盘 src/signal_generator.py:_check_breadth_lock):
       触发(三条同时): ①3只权益ETF站上各自SMA50比例 15个交易日前<33% 且 当日>67%
@@ -107,7 +109,7 @@ def build_surge_lock(index_close, etf_close, regime_series, cal, rebal_dates):
     返回 (额外调仓日 DatetimeIndex, {调仓日: 'RISKON'})
     """
     eq_etfs = ['sh510300', 'sh510500', 'sz159915']
-    sma30 = index_close.rolling(30).mean()
+    sma30 = index_close.rolling(sma_fast).mean()
     sma50 = index_close.rolling(50).mean()
     dev30 = (index_close - sma30) / sma30
     s30 = 0.6 * (0.5 + 0.5 * np.tanh(dev30 * 10)) + 0.4 * (sma50 > sma30).astype(float)
@@ -117,7 +119,7 @@ def build_surge_lock(index_close, etf_close, regime_series, cal, rebal_dates):
     s30 = s30.reindex(cal)
     breadth = breadth.reindex(cal)
     base = regime_series.reindex(cal)
-    trig = (base >= 0.15) & (s30 >= 0.70) & (breadth > 2 / 3) & (breadth.shift(15) < 1 / 3)
+    trig = (base >= base_min) & (s30 >= s30_min) & (breadth > breadth_hi + 1e-9) & (breadth.shift(lookback) < 1 / 3)
 
     rebal_set = set(rebal_dates)
     extra, forced = [], {}
@@ -132,10 +134,11 @@ def build_surge_lock(index_close, etf_close, regime_series, cal, rebal_dates):
         if d in rebal_set and d in regime_series.index:
             last_regime = regime_of(float(regime_series.loc[d]))
         if bool(trig.get(d, False)):
-            lock_until = i + SURGE_LOCK_DAYS - 1
+            lock_until = i + lock_days - 1
             forced[d] = 'RISKON'
             if last_regime != 'RISKON' and d not in rebal_set:
-                extra.append(d)
+                j = min(i + shift_entry, len(cal) - 1)  # 执行敏感性: T+2 变体
+                extra.append(cal[j]); forced[cal[j]] = 'RISKON'
             last_regime = 'RISKON'
     return pd.DatetimeIndex(extra), forced
 
@@ -183,11 +186,11 @@ def main():
     def sf(**kw):
         return factors_v5.build_select_fn(stock_data, cal, aux, qroe, **kw)
 
-    def run(select_fn=None, rebal=None, ratchet=False, condvol=False, top_n=15, surge=False):
+    def run(select_fn=None, rebal=None, ratchet=False, condvol=False, top_n=15, surge=False, surge_kw=None):
         rd = rebal if rebal is not None else me_dates
         forced = None
         if surge:
-            extra, forced = build_surge_lock(index_df['close'], df_close, regime_series, cal, rd)
+            extra, forced = build_surge_lock(index_df['close'], df_close, regime_series, cal, rd, **(surge_kw or {}))
             rd = pd.DatetimeIndex(sorted(set(rd) | set(extra)))
         dg = build_ratchet(index_df['close'], regime_series, cal, rd) if ratchet else None
         es = build_cond_vol_scale(index_df['close'], rd) if condvol else None
@@ -216,6 +219,17 @@ def main():
     # 广度SMA30锁定进场(用户既有设计, 移植实盘口径, 预注册两组)
     register('v4fixed_surge', lambda: run(surge=True))
     register('v5_surge', lambda: run(select_fn=sf(cap_neutral=True), surge=True))
+    # SURGE 扰动敏感性(预注册12组, OAT, V4-fixed基座)
+    _PERT = {
+        'su_look10': {'lookback': 10}, 'su_look20': {'lookback': 20},
+        'su_lock14': {'lock_days': 14}, 'su_lock28': {'lock_days': 28},
+        'su_s30lo': {'s30_min': 0.60}, 'su_s30hi': {'s30_min': 0.80},
+        'su_base10': {'base_min': 0.10}, 'su_base20': {'base_min': 0.20},
+        'su_sma20': {'sma_fast': 20}, 'su_sma40': {'sma_fast': 40},
+        'su_b23': {'breadth_hi': 2/3 - 0.02}, 'su_t2': {'shift_entry': 1},
+    }
+    for _n, _kw in _PERT.items():
+        register(_n, lambda _kw=_kw: run(surge=True, surge_kw=_kw))
 
     results = {}
     for name, fn in variants.items():
