@@ -1,0 +1,42 @@
+name: 日频SURGE监控
+
+on:
+  schedule:
+    # 工作日 15:35 北京时间(A股收市后); UTC+8 → 07:35 UTC
+    - cron: '35 7 * * 1-5'
+  workflow_dispatch: {}
+
+jobs:
+  surge-monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install akshare pandas numpy
+
+      - name: Run surge monitor
+        id: monitor
+        run: |
+          python surge_monitor.py | tee /tmp/surge_out.txt
+          # 触发/锁定状态放进 job summary, 便于手机通知一眼看到
+          cat /tmp/surge_out.txt >> $GITHUB_STEP_SUMMARY
+
+      - name: Commit state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add signals/surge_state.json
+          if git diff --staged --quiet; then
+            echo "No state change"
+          else
+            git commit -m "🔔 SURGE 状态更新 $(date +%Y-%m-%d)"
+            git push
+          fi
