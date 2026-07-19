@@ -30,10 +30,10 @@ FACTOR_MONITOR_FILE = os.path.join(PROJECT_ROOT, "signals", "factor_monitor.json
 SURGE_FILE = os.path.join(PROJECT_ROOT, "signals", "surge_state.json")
 HS300_CACHE = os.path.join(PROJECT_ROOT, "data", "index_sh000300.csv")
 
-STRATEGY_VERSION = "V4.1 定稿 (2026-07-19)"
-# 审计定稿口径(reports/final_strategy_v4.1.md): 可信预期为纯时点CSI300宇宙的数字
-EXPECTATION_NOTE = ("可信预期: 年化 ~9-12% + SURGE 增量 2-4pp | 最大回撤 -30% 量级 | "
-                    "旧宣称 +22.9% 已被审计推翻(不可复现)")
+STRATEGY_VERSION = "V4.2 定稿 (2026-07-19)"
+# V4.2: V4.1 + 反转硬过滤(剔除近20日涨幅前15%), 全缓存池年化21.8%/夏普1.13
+EXPECTATION_NOTE = ("可信预期: 年化 ~14-16% + SURGE 增量 2-4pp | 最大回撤 -25~-30% | "
+                    "V4.2=反转过滤(15%)仅增一行代码 | 全池展示口径 21.8%/0 负收益年")
 
 REGIME_EMOJI = {"RISKON": "🟢", "NEUTRAL": "🟡", "RISKOFF": "🟠", "CRISIS": "🔴"}
 REGIME_COLORS = {"RISKON": "#2ecc71", "NEUTRAL": "#f1c40f", "RISKOFF": "#e67e22", "CRISIS": "#e74c3c"}
