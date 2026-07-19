@@ -219,7 +219,7 @@ def compute_stock_factors(stock_data, date, pe_data=None):
     return scores
 
 
-def filter_reversal_stocks(stock_data, date, exclude_pct=0.25):
+def filter_reversal_stocks(stock_data, date, exclude_pct=0.15):
     """
     V4.2 反转硬过滤(2026-07-19): 剔除近20日涨幅前 exclude_pct 的候选股。
 
