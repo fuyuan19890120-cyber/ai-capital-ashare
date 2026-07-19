@@ -322,7 +322,7 @@ def run_stock_backtest(
 
             # === Stock Selection (during RISKON/NEUTRAL/RISKOFF) ===
             selected_stocks = []
-            if eq_w > 0 and stock_data:
+            if eq_w > 0 and (stock_data or select_fn is not None):
                 if select_fn is not None:
                     selected_stocks = select_fn(date)
                 else:
