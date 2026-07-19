@@ -219,6 +219,35 @@ def compute_stock_factors(stock_data, date, pe_data=None):
     return scores
 
 
+def filter_reversal_stocks(stock_data, date, exclude_pct=0.15):
+    """
+    V4.2 反转硬过滤(2026-07-19): 剔除近20日涨幅前 exclude_pct 的候选股。
+
+    A股截面动量为负/反转效应是最稳健的量价因子(roadmap P1, CH-3/CH-4),
+    但多头端弱——最佳用法是作剔除项: 追涨买入短期涨幅最高的票几乎必亏。
+
+    stock_data: {code: DataFrame}
+    date: 当前调仓日期
+    exclude_pct: 剔除分位(默认 0.25 = 前25%)
+    返回: 过滤后的 {code: DataFrame}
+    """
+    returns_20d = {}
+    for code, df in stock_data.items():
+        if date in df.index:
+            idx = df.index.get_loc(date)
+            if idx >= 20:
+                ret = float(df['close'].iloc[idx]) / float(df['close'].iloc[idx - 20]) - 1
+                returns_20d[code] = ret
+
+    if len(returns_20d) < 10:
+        return stock_data  # 样本太少, 不过滤
+
+    threshold = np.percentile(list(returns_20d.values()), (1 - exclude_pct) * 100)
+    filtered = {code: stock_data[code] for code, ret in returns_20d.items()
+                if ret < threshold}
+    return filtered
+
+
 def select_top_stocks(scores, top_n=10):
     """从评分中选出 Top N 股票"""
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)

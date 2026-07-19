@@ -14,7 +14,7 @@ RISKON/NEUTRAL/RISKOFF时用个股，CRISIS时用ETF防御
 import pandas as pd
 import numpy as np
 from config import START_DATE
-from src.stock_data import compute_stock_factors, select_top_stocks
+from src.stock_data import compute_stock_factors, select_top_stocks, filter_reversal_stocks
 
 STAMP_DUTY_CUT_DATE = pd.Timestamp("2023-08-28")  # 印花税 0.1% -> 0.05%
 CHINEXT_20PCT_DATE = pd.Timestamp("2020-08-24")   # 创业板涨跌幅 10% -> 20%
@@ -324,7 +324,10 @@ def run_stock_backtest(
             selected_stocks = []
             if eq_w > 0 and stock_data:
                 if select_fn is not None:
-                    selected_stocks = select_fn(date)
+                    try:
+                        selected_stocks = select_fn(date, regime)
+                    except TypeError:
+                        selected_stocks = select_fn(date)  # legacy select_fn(date)
                 else:
                     # Filter ST stocks
                     valid_stocks = {}
@@ -333,6 +336,9 @@ def run_stock_backtest(
                             continue
                         if date in sdf.index and len(sdf[sdf.index <= date]) >= 250:
                             valid_stocks[code] = sdf
+                    # V4.2 反转过滤: 剔除近20日涨幅前25%的候选(A股反转效应)
+                    if valid_stocks:
+                        valid_stocks = filter_reversal_stocks(valid_stocks, date)
                     if valid_stocks:
                         scores = compute_stock_factors(valid_stocks, date)
                         selected_stocks = select_top_stocks(scores, top_n)

@@ -25,7 +25,7 @@ from config import (
 from src.data_fetcher import fetch_index_daily
 from src.stock_data import (
     get_csi300_constituents, fetch_stock_daily,
-    compute_stock_factors, select_top_stocks,
+    compute_stock_factors, select_top_stocks, filter_reversal_stocks,
 )
 from src.risk_manager import RiskManager, RiskLimits, classify_sector
 
@@ -232,6 +232,9 @@ def generate_signals(stock_data=None, benchmark_data=None):
     for code, df in stock_data.items():
         if latest_date in df.index and len(df[df.index <= latest_date]) >= 250:
             valid_stocks[code] = df
+
+    # V4.2 反转过滤: 剔除近20日涨幅前25%的候选(A股反转效应)
+    valid_stocks = filter_reversal_stocks(valid_stocks, latest_date)
 
     # 计算因子得分
     scores = compute_stock_factors(valid_stocks, latest_date)
