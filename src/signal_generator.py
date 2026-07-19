@@ -21,6 +21,7 @@ from config import (
     COMMISSION, SLIPPAGE,
     MAX_SINGLE_POSITION, MAX_SECTOR_PCT,
     STOP_LOSS_PCT, DRAWDOWN_WARNING, DRAWDOWN_HALT, DRAWDOWN_LIQUIDATE,
+    REVERSAL_FILTER_PCT,
 )
 from src.data_fetcher import fetch_index_daily
 from src.stock_data import (
@@ -233,8 +234,8 @@ def generate_signals(stock_data=None, benchmark_data=None):
         if latest_date in df.index and len(df[df.index <= latest_date]) >= 250:
             valid_stocks[code] = df
 
-    # V4.2 反转过滤: 剔除近20日涨幅前25%的候选(A股反转效应)
-    valid_stocks = filter_reversal_stocks(valid_stocks, latest_date)
+    # V4.2 反转过滤: 剔除近20日涨幅前REVERSAL_FILTER_PCT的候选(A股反转效应)
+    valid_stocks = filter_reversal_stocks(valid_stocks, latest_date, exclude_pct=REVERSAL_FILTER_PCT)
 
     # 计算因子得分
     scores = compute_stock_factors(valid_stocks, latest_date)

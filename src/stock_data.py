@@ -228,7 +228,7 @@ def filter_reversal_stocks(stock_data, date, exclude_pct=0.15):
 
     stock_data: {code: DataFrame}
     date: 当前调仓日期
-    exclude_pct: 剔除分位(默认 0.25 = 前25%)
+    exclude_pct: 剔除分位(默认 0.15 = 前15%)
     返回: 过滤后的 {code: DataFrame}
     """
     returns_20d = {}

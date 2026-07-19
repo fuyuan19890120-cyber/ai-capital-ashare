@@ -14,6 +14,7 @@ RISKON/NEUTRAL/RISKOFF时用个股，CRISIS时用ETF防御
 import pandas as pd
 import numpy as np
 from config import START_DATE
+from config import REVERSAL_FILTER_PCT
 from src.stock_data import compute_stock_factors, select_top_stocks, filter_reversal_stocks
 
 STAMP_DUTY_CUT_DATE = pd.Timestamp("2023-08-28")  # 印花税 0.1% -> 0.05%
@@ -336,9 +337,9 @@ def run_stock_backtest(
                             continue
                         if date in sdf.index and len(sdf[sdf.index <= date]) >= 250:
                             valid_stocks[code] = sdf
-                    # V4.2 反转过滤: 剔除近20日涨幅前25%的候选(A股反转效应)
+                    # V4.2 反转过滤: 剔除近20日涨幅前REVERSAL_FILTER_PCT的候选(A股反转效应)
                     if valid_stocks:
-                        valid_stocks = filter_reversal_stocks(valid_stocks, date)
+                        valid_stocks = filter_reversal_stocks(valid_stocks, date, exclude_pct=REVERSAL_FILTER_PCT)
                     if valid_stocks:
                         scores = compute_stock_factors(valid_stocks, date)
                         selected_stocks = select_top_stocks(scores, top_n)

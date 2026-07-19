@@ -54,19 +54,40 @@ def load_index():
     return pd.read_csv(path, index_col=0, parse_dates=True)
 
 
-def load_stocks(limit=None):
-    """limit=None 加载全部缓存个股(修复: 旧版 limit=400 按文件名截断, 无沪市/科创票)"""
+def load_stocks(limit=None, index_only=False):
+    """limit=None 加载全部缓存个股(修复: 旧版 limit=400 按文件名截断, 无沪市/科创票)
+
+    index_only=True: 仅加载 CSI300+创业板指+科创50 成分股(与实盘 signal_generator 一致)。
+    V4.2 审计修复(2026-07-19): 回测必须与实盘使用相同的股票池。
+    """
     d = os.path.join(DATA_DIR, "stocks")
     if not os.path.exists(d): return {}
+
+    # 获取指数成分股白名单(与 signal_generator.load_stock_universe 一致)
+    whitelist = None
+    if index_only:
+        try:
+            import akshare as ak
+            from src.stock_data import get_csi300_constituents
+            csi300 = set(get_csi300_constituents())
+            chinext = set(ak.index_stock_cons(symbol="399006")['品种代码'].apply(lambda x: str(x).zfill(6)))
+            star50 = set(ak.index_stock_cons(symbol="000688")['品种代码'].apply(lambda x: str(x).zfill(6)))
+            whitelist = csi300 | chinext | star50
+        except Exception:
+            pass
+
     result = {}
     files = sorted(os.listdir(d))
     if limit:
         files = files[:limit]
     for f in files:
         if not f.endswith('.csv'): continue
+        code = f.replace('.csv', '')
+        if whitelist is not None and code not in whitelist:
+            continue
         try:
             df = pd.read_csv(os.path.join(d, f), index_col=0, parse_dates=True)
-            if len(df) > 250: result[f.replace('.csv', '')] = df
+            if len(df) > 250: result[code] = df
         except: pass
     return result
 
@@ -85,11 +106,11 @@ def compute_regime(benchmark_close):
 
 
 MODES = {
-    # (calendar_fix, limit, execution, stamp_duty, ffill_valuation) — 逐项叠加的归因链
-    'legacy':   (False, 400,  'same_close', False, False),  # 忠实复刻旧代码+当前数据(被588000截断到2020-11)
-    'calendar': (True,  400,  'same_close', False, False),  # +日历修复(≈原始+22.9%运行时的数据环境)
-    'universe': (True,  None, 'same_close', False, False),  # +宇宙修复(全部缓存个股)
-    'fixed':    (True,  None, 'next_open',  True,  True),   # +执行/印花税/涨跌停/停牌估值(新基线)
+    # (calendar_fix, limit, execution, stamp_duty, ffill_valuation, index_only)
+    'legacy':   (False, 400,  'same_close', False, False, False),  # 忠实复刻旧代码(被588000截断到2020-11)
+    'calendar': (True,  400,  'same_close', False, False, False),  # +日历修复
+    'universe': (True,  None, 'same_close', False, False, False),  # +宇宙修复(全部缓存个股)
+    'fixed':    (True,  None, 'next_open',  True,  True,  True),   # V4.2审计修复: index_only=True对齐实盘宇宙
 }
 
 
@@ -97,7 +118,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--mode', choices=list(MODES), default='fixed')
     args = ap.parse_args()
-    calendar_fix, limit, execution, stamp, ffill = MODES[args.mode]
+    calendar_fix, limit, execution, stamp, ffill, index_only = MODES[args.mode]
 
     print("=" * 55)
     print(f"  最终个股版回测  [mode={args.mode}]")
@@ -108,7 +129,7 @@ def main():
     print("\n加载数据...")
     df_close, df_open = load_etf_prices(calendar_fix)
     index_df = load_index()
-    stock_data = load_stocks(limit)
+    stock_data = load_stocks(limit, index_only=index_only)
 
     print(f"  ETF: {df_close.index[0].date()} ~ {df_close.index[-1].date()} ({len(df_close)} 行)")
     print(f"  沪深300: {index_df.index[0].date()} ~ {index_df.index[-1].date()} ({len(index_df)} 行)")
