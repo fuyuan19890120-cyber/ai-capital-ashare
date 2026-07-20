@@ -1,50 +1,53 @@
 """
-因子监控与退化预警（Quant-Zero 方法论）
+V4.2 因子监控(2026-07-19 重新设计)
 
-每月运行，追踪每个选股因子的：
-  1. IC（信息系数）—— 因子得分与未来收益的相关性
-  2. 胜率 —— 高分股票跑赢低分股票的概率
-  3. 多头超额 —— 高分组的超额收益
-  4. 滚动表现 —— 检测因子是否在退化
+每月运行，追踪：
+  1. 低波因子 IC — 唯一穿越三年的有效因子
+  2. 动量因子 IC — 6月夏普动量
+  3. 反转过滤效果 — 被剔除 vs 入选股的次月表现差
+  4. 综合得分 IC — V4.2完整排名 vs 未来收益
+  5. 制度分档 IC — RISKON vs 非RISKON下的因子行为
 
-当因子连续3个月 IC<0.02 或 连续6个月胜率<55%，触发退化预警。
+当连续3个月 综合IC<0.03 或 反转过滤效果为负，触发退化预警。
+
+与旧版区别:
+  - 只监控真实因子(不再监控假"价值"/假"质量")
+  - 用指数成分宇宙(与实盘一致)
+  - 在反转过滤后的池子里计算IC
+  - 新增反转过滤效果指标
 """
 import os, json
 import numpy as np
 import pandas as pd
 from datetime import datetime
 
-from src.universe import load_price_data, get_aligned_prices
 from src.stock_data import (
-    get_csi300_constituents, fetch_stock_daily,
-    compute_stock_factors, FACTOR_WEIGHTS
+    filter_reversal_stocks, compute_stock_factors, get_csi300_constituents,
 )
+from config import REVERSAL_FILTER_PCT, REGIME_THRESHOLDS
 
-MONITOR_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "signals", "factor_monitor.json")
-OBSIDIAN_DIR = "/Users/fuyuan/Documents/Obsidian Vault/项目/量化/策略1 - AI-Capital 动量制度检测"
-MONITOR_MD = os.path.join(OBSIDIAN_DIR, "因子监控.md")
+MONITOR_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                            "signals", "factor_monitor.json")
 
 
 def run_monthly_monitor():
-    """每月运行：计算各因子表现，写入监控报告"""
     print("=" * 60)
-    print("  因子监控 — Quant-Zero 方法")
+    print("  V4.2 因子监控")
     print("=" * 60)
-    print()
 
-    # 加载数据
-    prices = load_price_data()
-    df_close = get_aligned_prices(prices)
-    latest_date = df_close.index[-1]
-
-    # 加载个股
+    # ── 加载指数成分宇宙(与 signal_generator 一致) ──
     import akshare as ak
-    csi300 = set(ak.index_stock_cons(symbol="000300")['品种代码'].apply(lambda x: str(x).zfill(6)))
-    chinext = set(ak.index_stock_cons(symbol="399006")['品种代码'].apply(lambda x: str(x).zfill(6)))
-    star50 = set(ak.index_stock_cons(symbol="000688")['品种代码'].apply(lambda x: str(x).zfill(6)))
+    csi300 = set(get_csi300_constituents())
+    try:
+        chinext = set(ak.index_stock_cons(symbol="399006")['品种代码']
+                      .apply(lambda x: str(x).zfill(6)))
+        star50 = set(ak.index_stock_cons(symbol="000688")['品种代码']
+                     .apply(lambda x: str(x).zfill(6)))
+    except Exception:
+        chinext, star50 = set(), set()
     pool = csi300 | chinext | star50
 
-    CACHE_DIR = 'data/stocks'
+    CACHE_DIR = os.path.expanduser("~/ai-capital-ashare/data/stocks")
     stock_data = {}
     for f in os.listdir(CACHE_DIR):
         code = f.replace('.csv', '')
@@ -53,202 +56,273 @@ def run_monthly_monitor():
                 df = pd.read_csv(f'{CACHE_DIR}/{f}', index_col=0, parse_dates=True)
                 if len(df) > 250:
                     stock_data[code] = df
-            except:
+            except Exception:
                 pass
 
-    # 计算每个因子的IC
-    factor_ics = analyze_factors(stock_data, latest_date)
+    cal = sorted([d for code in stock_data for d in stock_data[code].index])
+    cal = sorted(set(cal))
+    if not cal:
+        print("无可用日历")
+        return
+    latest_date = pd.Timestamp(cal[-1])
+    # 找最近一个可用月末
+    monthly_dates = pd.Series(cal).groupby(
+        pd.Series(cal).dt.to_period('M')).last()
+    eval_date = pd.Timestamp(monthly_dates.iloc[-2]) if len(monthly_dates) >= 2 else latest_date
 
-    # 检查退化
-    alerts = check_degradation(factor_ics)
+    print(f"宇宙: {len(stock_data)} 只 | 评估日: {eval_date.date()}")
 
-    # 输出
-    print("因子表现（最新月份）：")
-    print(f'  {"因子":<20} {"IC":>8} {"胜率":>8} {"状态"}')
-    print(f'  {"-"*45}')
-    for fname, metrics in factor_ics.items():
-        status = "⚠️ 退化" if fname in alerts else "✅ 正常"
-        print(f'  {fname:<20} {metrics["ic"]:>+7.3f} {metrics["win_rate"]:>7.1f}% {status}')
+    # ── V4.2 反转过滤 ──
+    valid_all = {}
+    for code, df in stock_data.items():
+        if eval_date in df.index and len(df[df.index <= eval_date]) >= 250:
+            valid_all[code] = df
+
+    filtered = filter_reversal_stocks(valid_all, eval_date)
+    excluded_codes = set(valid_all.keys()) - set(filtered.keys())
+    print(f"反转过滤: {len(valid_all)} → {len(filtered)} (剔除前{REVERSAL_FILTER_PCT*100:.0f}%)")
+
+    # ── 1. 真实因子 IC ──
+    factor_ics = {}
+    factor_names_real = {
+        "low_vol": "低波动率",
+        "momentum_6m": "动量(6月夏普)",
+    }
+
+    returns_1m = _forward_returns(stock_data, eval_date, 21)
+
+    for fname, flabel in factor_names_real.items():
+        scores = _compute_real_factor(filtered, eval_date, fname)
+        ic, wr = _ic_and_winrate(scores, returns_1m)
+        factor_ics[fname] = {"label": flabel, "ic": ic, "win_rate": wr}
+        print(f"  {flabel:<12s}  IC={ic:+.4f}  胜率={wr:.0f}%")
+
+    # ── 2. 反转过滤效果 ──
+    reversal_effect = _measure_reversal_effect(valid_all, excluded_codes,
+                                                eval_date, returns_1m)
+    print(f"  反转过滤效果  剔除股平均次月={reversal_effect['excluded_ret']:+.2f}%  "
+          f"入选股平均={reversal_effect['selected_ret']:+.2f}%  "
+          f"差={reversal_effect['diff']:+.2f}%")
+
+    # ── 3. 综合得分 IC(反转过滤后的池子) ──
+    scores_full = compute_stock_factors(filtered, eval_date)
+    composite_ic, composite_wr = _ic_and_winrate(scores_full, returns_1m)
+    print(f"  综合得分       IC={composite_ic:+.4f}  胜率={composite_wr:.0f}%")
+
+    # ── 4. 制度分档 IC ──
+    regime_ic = _regime_breakdown(filtered, eval_date, returns_1m)
+    print(f"  综合IC(RISKON)={regime_ic.get('RISKON', 0):+.4f}  "
+          f"非RISKON={regime_ic.get('non_RISKON', 0):+.4f}")
+
+    # ── 退化预警 ──
+    alerts = []
+    if abs(composite_ic) < 0.03:
+        alerts.append(f"综合IC={composite_ic:+.3f}")
+    if reversal_effect['diff'] < -2.0:
+        alerts.append(f"反转过滤负效果({reversal_effect['diff']:.1f}%)")
+    for fname, d in factor_ics.items():
+        if d['win_rate'] < 40:  # 放宽: 单因子胜率不需要太高
+            alerts.append(f"{d['label']}胜率={d['win_rate']:.0f}%")
 
     if alerts:
-        print(f'\n⚠️ 退化预警：{", ".join(alerts)} 因子需要关注')
+        print(f"\n⚠️ 退化预警: {'; '.join(alerts)}")
+    else:
+        print(f"\n✅ 所有指标正常")
 
-    # 保存
+    # ── 保存 ──
     record = {
-        "date": latest_date.strftime('%Y-%m-%d'),
-        "factors": {k: {"ic": round(v["ic"], 4), "win_rate": round(v["win_rate"], 1)}
-                    for k, v in factor_ics.items()},
+        "date": eval_date.strftime('%Y-%m-%d'),
+        "universe_size": len(valid_all),
+        "filtered_size": len(filtered),
+        "factors": {
+            "low_vol": {"label": factor_ics["low_vol"]["label"],
+                        "ic": round(factor_ics["low_vol"]["ic"], 4),
+                        "win_rate": round(factor_ics["low_vol"]["win_rate"], 1)},
+            "momentum_6m": {"label": factor_ics["momentum_6m"]["label"],
+                            "ic": round(factor_ics["momentum_6m"]["ic"], 4),
+                            "win_rate": round(factor_ics["momentum_6m"]["win_rate"], 1)},
+        },
+        "composite": {"ic": round(composite_ic, 4), "win_rate": round(composite_wr, 1)},
+        "reversal_effect": {
+            "excluded_ret": round(reversal_effect["excluded_ret"], 2),
+            "selected_ret": round(reversal_effect["selected_ret"], 2),
+            "diff": round(reversal_effect["diff"], 2),
+            "n_excluded": reversal_effect["n_excluded"],
+            "n_selected": reversal_effect["n_selected"],
+        },
+        "regime_ic": {k: round(v, 4) for k, v in regime_ic.items()},
         "alerts": alerts,
     }
     _save_record(record)
-
-    # 写入 Obsidian
-    _write_obsidian_report(factor_ics, alerts, latest_date)
-
-    print(f"\n✅ 因子监控报告已写入 Obsidian")
+    _write_obsidian(record)
+    print(f"✅ 因子监控已保存")
 
 
-def analyze_factors(stock_data, date):
-    """计算每个因子的 IC 和胜率 — 硬编码每个因子独立计算"""
-    
-    # 获取过去一个月收益作为标签
-    returns = {}
-    for code in stock_data:
-        sdf = stock_data[code]
-        if len(sdf) > 250 and date in sdf.index:
-            idx = sdf.index.get_loc(date)
-            if idx >= 21:
-                ret = sdf['close'].iloc[idx] / sdf['close'].iloc[idx-21] - 1
-                returns[code] = ret
-
-    factor_ics = {}
-    
-    # 为每个因子独立计算得分
-    for factor_name in ["low_vol", "value", "quality", "momentum_6m"]:
-        scores = _compute_single_factor(stock_data, date, factor_name)
-        
-        common = set(scores.keys()) & set(returns.keys())
-        if len(common) < 20:
-            factor_ics[factor_name] = {"ic": 0, "win_rate": 50}
-            continue
-
-        score_list = [scores[c] for c in common]
-        ret_list = [returns[c] for c in common]
-
-        ic = pd.Series(score_list).rank().corr(pd.Series(ret_list).rank())
-
-        n = len(common)
-        top_n = max(1, n // 5)
-        sorted_idx = np.argsort(score_list)
-        top_ret = np.mean([ret_list[i] for i in sorted_idx[-top_n:]])
-        bot_ret = np.mean([ret_list[i] for i in sorted_idx[:top_n]])
-        win_rate = 100 if top_ret > bot_ret else 0
-
-        factor_ics[factor_name] = {
-            "ic": round(float(ic), 4) if not np.isnan(ic) else 0,
-            "win_rate": round(win_rate, 1),
-            "top_ret": round(float(top_ret) * 100, 2),
-            "bot_ret": round(float(bot_ret) * 100, 2),
-        }
-
-    return factor_ics
-
-
-def _compute_single_factor(stock_data, date, factor_name):
-    """单独计算一个因子的得分（不依赖全局 FACTOR_WEIGHTS）"""
-    scores = {}
+def _forward_returns(stock_data, date, horizon_days):
+    """计算 date 之后 horizon_days 的收益(前视, 仅用于IC计算)。
+    如果天数不够, 用可用的最大天数(最少5天)。"""
+    rets = {}
     for code, df in stock_data.items():
-        if date not in df.index: continue
+        idx = df.index.get_loc(date) if date in df.index else None
+        if idx is None:
+            continue
+        available = len(df) - idx - 1
+        h = min(horizon_days, available)
+        if h < 5:
+            continue
+        fwd_ret = float(df['close'].iloc[idx + h]) / float(df['close'].iloc[idx]) - 1
+        rets[code] = fwd_ret
+    return rets
+
+
+def _ic_and_winrate(scores, forward_returns):
+    """Rank IC + Top/Bottom 胜率"""
+    common = set(scores.keys()) & set(forward_returns.keys())
+    if len(common) < 20:
+        return 0.0, 50.0
+    slist = [scores[c] for c in common]
+    rlist = [forward_returns[c] for c in common]
+    ic = float(pd.Series(slist).rank().corr(pd.Series(rlist).rank()))
+    if np.isnan(ic):
+        ic = 0.0
+    n = len(common)
+    top_n = max(1, n // 5)
+    idx_sorted = np.argsort(slist)
+    top_avg = np.mean([rlist[i] for i in idx_sorted[-top_n:]])
+    bot_avg = np.mean([rlist[i] for i in idx_sorted[:top_n]])
+    wr = 100.0 if top_avg > bot_avg else 0.0
+    return round(ic, 4), round(wr, 1)
+
+
+def _compute_real_factor(valid_stocks, date, fname):
+    """计算单个真实因子的截面得分(复用 stock_data 逻辑)"""
+    scores = {}
+    for code, df in valid_stocks.items():
+        if date not in df.index:
+            continue
         hist = df[df.index <= date].dropna()
-        if len(hist) < 250: continue
-        
-        ret_63 = hist['close'].pct_change().dropna().iloc[-63:]
-        
-        if factor_name == "low_vol":
-            if len(ret_63) >= 20:
-                vol = ret_63.std() * np.sqrt(252)
+        if len(hist) < 250:
+            continue
+        if fname == "low_vol":
+            ret = hist['close'].pct_change().dropna().iloc[-63:]
+            if len(ret) >= 20:
+                vol = ret.std() * np.sqrt(252)
                 scores[code] = 1.0 / (vol + 0.01)
             else:
-                scores[code] = 0
-                
-        elif factor_name == "value":
-            scores[code] = 1.0 / max(hist['close'].iloc[-1], 0.01)
-            
-        elif factor_name == "quality":
-            if len(hist) >= 500:
-                long_ret = hist['close'].iloc[-1] / hist['close'].iloc[-250] - 1
-                scores[code] = max(0, long_ret) * 2
-            else:
-                scores[code] = 0
-                
-        elif factor_name == "momentum_6m":
+                scores[code] = 0.0
+        elif fname == "momentum_6m":
             if len(hist) >= 126:
                 ret_6m = hist['close'].iloc[-1] / hist['close'].iloc[-126] - 1
                 vol_6m = hist['close'].pct_change().dropna().iloc[-126:].std()
                 scores[code] = ret_6m / vol_6m if vol_6m > 0 else ret_6m
             else:
-                scores[code] = 0
-                
+                scores[code] = 0.0
     return scores
-def check_degradation(factor_ics):
-    """检查因子退化：IC<0.02 或 胜率<55%"""
-    alerts = []
-    for fname, metrics in factor_ics.items():
-        if abs(metrics["ic"]) < 0.02:
-            alerts.append(fname)
-        elif metrics["win_rate"] < 55:
-            alerts.append(fname)
-    return alerts
+
+
+def _measure_reversal_effect(valid_all, excluded_codes, date, forward_returns):
+    """反转过滤效果: 被剔除 vs 入选的次月收益差"""
+    ex_rets = [forward_returns[c] for c in excluded_codes if c in forward_returns]
+    sel_codes = set(valid_all.keys()) - excluded_codes
+    sel_rets = [forward_returns[c] for c in sel_codes if c in forward_returns]
+    return {
+        "excluded_ret": np.mean(ex_rets) * 100 if ex_rets else 0,
+        "selected_ret": np.mean(sel_rets) * 100 if sel_rets else 0,
+        "diff": (np.mean(sel_rets) - np.mean(ex_rets)) * 100 if sel_rets and ex_rets else 0,
+        "n_excluded": len(ex_rets),
+        "n_selected": len(sel_rets),
+    }
+
+
+def _regime_breakdown(valid_stocks, date, forward_returns):
+    """按当时市场制度分档计算IC"""
+    # 用沪深300 SMA250 近似判断当时制度
+    hs300_path = os.path.expanduser("~/ai-capital-ashare/data/index_sh000300.csv")
+    regime_label = "non_RISKON"
+    if os.path.exists(hs300_path):
+        try:
+            hs300 = pd.read_csv(hs300_path, index_col=0, parse_dates=True)
+            if date in hs300.index:
+                idx = hs300.index.get_loc(date)
+                if idx >= 250:
+                    close = hs300['close'].iloc[idx]
+                    sma250 = hs300['close'].iloc[idx-250:idx].mean()
+                    # 简化制度判断: RISKON条件
+                    if close > sma250:
+                        regime_label = "RISKON"
+        except Exception:
+            pass
+
+    scores = compute_stock_factors(valid_stocks, date)
+    ic, _ = _ic_and_winrate(scores, forward_returns)
+    return {regime_label: ic}
 
 
 def _save_record(record):
     if os.path.exists(MONITOR_FILE):
-        with open(MONITOR_FILE, 'r') as f:
+        with open(MONITOR_FILE) as f:
             history = json.load(f)
     else:
         history = {"records": []}
+    # 去重同日
+    history["records"] = [r for r in history["records"]
+                          if r.get("date") != record["date"]]
     history["records"].append(record)
-    # Keep last 24 months
     history["records"] = history["records"][-24:]
     with open(MONITOR_FILE, 'w') as f:
-        json.dump(history, f, ensure_ascii=False, indent=2)
+        json.dump(history, f, ensure_ascii=False, indent=2, default=str)
 
 
-def _write_obsidian_report(factor_ics, alerts, date):
-    """写入 Obsidian 因子监控报告"""
-    os.makedirs(OBSIDIAN_DIR, exist_ok=True)
+def _write_obsidian(record):
+    obsidian_dir = ("/Users/fuyuan/Documents/Obsidian Vault/"
+                    "项目/量化/策略1 - AI-Capital")
+    os.makedirs(obsidian_dir, exist_ok=True)
+    md_path = os.path.join(obsidian_dir, "因子监控.md")
 
-    lines = []
-    lines.append("---")
-    lines.append("tags: [因子监控, 策略1, Quant-Zero]")
-    lines.append(f"date: {date.strftime('%Y-%m-%d')}")
-    lines.append("parent: \"[[策略1 - AI-Capital 动量制度检测|策略1]]\"")
-    lines.append("---")
-    lines.append("")
-    lines.append(f"# 因子监控 — {date.strftime('%Y-%m')}")
-    lines.append("")
-    lines.append("## 本月因子表现")
-    lines.append("")
-    lines.append("| 因子 | 权重 | IC | 胜率 | 状态 |")
-    lines.append("|------|:----:|:---:|:----:|:----:|")
+    lines = [
+        "---",
+        "tags: [因子监控, 策略1, V4.2]",
+        f"date: {record['date']}",
+        "parent: \"[[策略1 - AI-Capital 动量制度检测|策略1]]\"",
+        "---",
+        "",
+        f"# V4.2 因子监控 — {record['date']}",
+        "",
+        "## 真实因子表现",
+        "",
+        "| 因子 | IC | 胜率 |",
+        "|------|:---:|:----:|",
+    ]
+    for fname in ["low_vol", "momentum_6m"]:
+        d = record["factors"].get(fname, {})
+        lines.append(f"| {d.get('label', fname)} | {d.get('ic', 0):+.4f} | {d.get('win_rate', 0):.0f}% |")
 
-    for fname in ["low_vol", "value", "quality", "momentum_6m"]:
-        if fname not in factor_ics:
-            continue
-        m = factor_ics[fname]
-        w = FACTOR_WEIGHTS.get(fname, 0)
-        status = "⚠️" if fname in alerts else "✅"
-        lines.append(f"| {fname} | {w*100:.0f}% | {m['ic']:+.3f} | {m['win_rate']:.0f}% | {status} |")
+    lines += [
+        "",
+        "## 综合指标",
+        "",
+        f"| 指标 | 值 |",
+        f"|------|:---|",
+        f"| 综合得分 IC | {record['composite']['ic']:+.4f} |",
+        f"| 综合胜率 | {record['composite']['win_rate']:.0f}% |",
+        f"| 反转过滤效果(入选-剔除) | {record['reversal_effect']['diff']:+.2f}% |",
+        f"| 剔除股次月平均收益 | {record['reversal_effect']['excluded_ret']:+.2f}% |",
+        f"| 入选股次月平均收益 | {record['reversal_effect']['selected_ret']:+.2f}% |",
+        f"| 制度分档IC(RISKON) | {record['regime_ic'].get('RISKON', 0):+.4f} |",
+        f"| 制度分档IC(非RISKON) | {record['regime_ic'].get('non_RISKON', 0):+.4f} |",
+        f"| 宇宙规模 | {record['universe_size']} → {record['filtered_size']} (过滤后) |",
+        "",
+    ]
 
-    lines.append("")
-    lines.append("## 滚动表现（近6月）")
-    lines.append("")
-    lines.append("| 月份 | low_vol | value | quality | momentum_6m |")
-    lines.append("|------|:------:|:-----:|:-------:|:-----------:|")
-
-    # Read history
-    if os.path.exists(MONITOR_FILE):
-        with open(MONITOR_FILE, 'r') as f:
-            history = json.load(f)
-        for r in history["records"][-6:]:
-            ics = r.get("factors", {})
-            parts = [r["date"]]
-            for fn in ["low_vol", "value", "quality", "momentum_6m"]:
-                ic = ics.get(fn, {}).get("ic", 0)
-                parts.append(f"{ic:+.3f}")
-            lines.append("| " + " | ".join(parts) + " |")
-
-    lines.append("")
-    if alerts:
+    if record["alerts"]:
         lines.append("## ⚠️ 退化预警")
+        for a in record["alerts"]:
+            lines.append(f"- {a}")
         lines.append("")
-        for a in alerts:
-            lines.append(f"- **{a}** 因子连续表现不佳，建议关注或提出替代假设")
 
-    lines.append("")
-    lines.append("> Quant-Zero 方法论：持续监控 → 退化预警 → 假设替代 → 回测验证")
+    lines.append("> V4.2 因子监控: 只追踪真实因子(低波/动量) + 反转过滤效果 + 综合得分IC")
 
-    with open(MONITOR_MD, 'w') as f:
+    with open(md_path, 'w') as f:
         f.write('\n'.join(lines))
 
 

@@ -67,6 +67,7 @@ jobs:
         run: |
           python refresh_data.py
           python run_monthly.py
+          python -m src.factor_monitor
 
       - name: Commit signals to repo
         if: steps.check.outputs.should_run == 'true' || github.event.inputs.force == 'true'

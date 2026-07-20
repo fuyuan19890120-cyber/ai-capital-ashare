@@ -99,6 +99,40 @@
         "low_vol",
         "value"
       ]
+    },
+    {
+      "date": "2026-06-30",
+      "universe_size": 380,
+      "filtered_size": 323,
+      "factors": {
+        "low_vol": {
+          "label": "低波动率",
+          "ic": 0.4979,
+          "win_rate": 100.0
+        },
+        "momentum_6m": {
+          "label": "动量(6月夏普)",
+          "ic": -0.4141,
+          "win_rate": 0.0
+        }
+      },
+      "composite": {
+        "ic": -0.4095,
+        "win_rate": 0.0
+      },
+      "reversal_effect": {
+        "excluded_ret": -17.92,
+        "selected_ret": -1.37,
+        "diff": 16.55,
+        "n_excluded": 57,
+        "n_selected": 323
+      },
+      "regime_ic": {
+        "RISKON": -0.4095
+      },
+      "alerts": [
+        "动量(6月夏普)胜率=0%"
+      ]
     }
   ]
 }

@@ -262,39 +262,60 @@ def main():
     st.divider()
 
     # ============================================================
-    # 因子监控 (Quant-Zero)
+    # 因子监控 (V4.2)
     # ============================================================
-    st.subheader("🔬 因子监控 (Quant-Zero)")
+    st.subheader("🔬 因子监控 (V4.2)")
 
     if factor_data and factor_data.get("records"):
-        latest = factor_data["records"][-1]["factors"]
-        cols = st.columns(4)
-        for i, fn in enumerate(["low_vol", "value", "quality", "momentum_6m"]):
-            m = latest.get(fn, {})
+        latest = factor_data["records"][-1]
+
+        # 第一行：真实因子 IC
+        st.caption("真实因子")
+        cols = st.columns(2)
+        for i, fn in enumerate(["low_vol", "momentum_6m"]):
+            m = latest.get("factors", {}).get(fn, {})
             ic = m.get("ic", 0)
             wr = m.get("win_rate", 50)
+            label = m.get("label", fn)
             status = "✅" if ic > 0 else "⚠️"
             with cols[i]:
-                st.metric(
-                    f"{status} {FACTOR_NAMES[fn]}",
-                    f"IC {ic:+.3f}",
-                    delta=f"权重 {FACTOR_W[fn]}% | 胜率 {wr:.0f}%",
-                )
+                st.metric(f"{status} {label}", f"IC {ic:+.3f}",
+                          delta=f"胜率 {wr:.0f}%")
 
-        alerts = factor_data["records"][-1].get("alerts", [])
+        # 第二行：综合 + 反转过滤效果
+        st.caption("综合指标")
+        cols2 = st.columns(3)
+        comp = latest.get("composite", {})
+        rev = latest.get("reversal_effect", {})
+        with cols2[0]:
+            st.metric("综合得分 IC", f"{comp.get('ic', 0):+.3f}",
+                      delta=f"胜率 {comp.get('win_rate', 50):.0f}%")
+        with cols2[1]:
+            st.metric("反转过滤效果", f"{rev.get('diff', 0):+.2f}%",
+                      delta=f"入选 {rev.get('selected_ret', 0):+.1f}% / 剔除 {rev.get('excluded_ret', 0):+.1f}%")
+        with cols2[2]:
+            ric = latest.get("regime_ic", {})
+            st.metric("制度分档 IC",
+                      f"RISKON {ric.get('RISKON', 0):+.3f}",
+                      delta=f"非RISKON {ric.get('non_RISKON', 0):+.3f}")
+
+        alerts = latest.get("alerts", [])
         if alerts:
-            st.warning(f"⚠️ 退化预警: {', '.join(alerts)}")
+            st.warning(f"⚠️ 退化预警: {'; '.join(alerts)}")
         else:
-            st.success("✅ 所有因子正常")
+            st.success("✅ 所有指标正常")
 
         records = factor_data["records"]
         if len(records) >= 2:
             st.caption("📈 滚动 IC 历史")
             rows = []
             for r in records[-6:]:
-                row = {"日期": r["date"]}
-                for fn in FACTOR_NAMES:
-                    row[FACTOR_NAMES[fn]] = f"{r['factors'].get(fn, {}).get('ic', 0):+.3f}"
+                row = {"日期": r["date"],
+                       "低波": f\"{r['factors'].get('low_vol',{}).get('ic',0):+.3f}\",
+                       "动量": f\"{r['factors'].get('momentum_6m',{}).get('ic',0):+.3f}\",
+                       "综合": f\"{r.get('composite',{}).get('ic',0):+.3f}\",
+                       "反转过滤": f\"{r.get('reversal_effect',{}).get('diff',0):+.2f}%\",
+                       "池子": f\"{r.get('universe_size','?')}→{r.get('filtered_size','?')}\",}
                 rows.append(row)
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     else:
