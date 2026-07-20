@@ -5,7 +5,7 @@ SC Strategy — Final Version (2026-07-20)
 Strategy: liquidity(50%) + momentum(50%), no timing, always 95% equity
 Universe: CSI500 + CSI1000
 Hard filters: ST + reversal 20% + pbMRQ>0 + price≥1.5
-Picks: Top-30, monthly rebalance, T+1 open execution, full costs
+Picks: Top-30, bi-monthly rebalance, T+1 open execution, full costs
 
 Usage:
   venv/bin/python run_sc_final.py               # baseline + benchmark report
@@ -24,6 +24,12 @@ from src.stock_backtest import run_stock_backtest
 from src import factors_v5
 from run_final_backtest import load_etf_prices, load_index, compute_regime
 from run_v5_backtest import month_end_dates, mid_month_dates, build_ratchet, build_cond_vol_scale, build_surge_lock, metrics_from_values
+
+# ── Bi-monthly rebalance schedule ──
+def bimonthly_dates(cal):
+    """Last trading day of every 2-month period."""
+    s = pd.Series(cal)
+    return pd.DatetimeIndex(s.groupby((s.dt.year * 12 + s.dt.month - 1) // 2).last())
 
 DATA_DIR = os.path.expanduser("~/ai-capital-ashare/data")
 STOCK_DIR = os.path.join(DATA_DIR, "stocks")
@@ -212,7 +218,7 @@ def main():
     index_df = load_index()
     regime_series = compute_regime(index_df['close'])
     cal = df_close.index[df_close.index >= START_DATE]
-    me_dates = month_end_dates(cal)
+    me_dates = bimonthly_dates(cal)
     forced_riskon = {d: 'RISKON' for d in me_dates if d in cal}
 
     stock_data = load_universe()
@@ -292,7 +298,7 @@ def main():
     print(f"\n  Configuration:")
     print(f"    Factors: liquidity(50%) + momentum(50%)")
     print(f"    Filters: ST + reversal(20%) + pbMRQ>0 + price≥{PRICE_MIN}")
-    print(f"    Picks: Top-{TOP_N}, monthly rebalance")
+    print(f"    Picks: Top-{TOP_N}, bi-monthly rebalance")
     print(f"    Execution: T+1 open, full costs")
     print(f"    Timing: None (always 95% equity)")
     print(f"    Universe: CSI500+CSI1000 ({len(codes)} cached)")
