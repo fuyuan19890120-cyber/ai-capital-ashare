@@ -1,0 +1,28 @@
+name: 下载行业ETF日线
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 22 * * 6'  # 每周六 UTC 22:00 = 北京时间周日 06:00
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install pandas requests akshare
+      - run: python fetch_sector_etfs.py
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/etf_sector/
+          if git diff --staged --quiet; then
+            echo "No new ETFs"
+          else
+            git commit -m "📊 行业ETF日线更新 ($(date +%Y-%m-%d))"
+            git push
+          fi
