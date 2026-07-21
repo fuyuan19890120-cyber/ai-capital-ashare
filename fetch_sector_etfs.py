@@ -32,6 +32,18 @@ def theme(s):
         if k in str(s): return k
     return None
 
+CORE_LIST = [
+    ("sh515070","人工智能"), ("sh512580","环保"), ("sh512710","军工龙头"),
+    ("sh515050","5G"), ("sh515880","通信"), ("sh515790","光伏"),
+    ("sh512660","军工"), ("sh516160","新能源"), ("sh515030","新能源车"),
+    ("sh512480","半导体设备"), ("sh512760","半导体"), ("sh512170","医疗"),
+    ("sh512200","房地产"), ("sh515210","钢铁"), ("sh515220","煤炭"),
+    ("sh512070","非银"), ("sh516150","稀土"), ("sh515180","红利"),
+    ("sh515250","智能汽车"), ("sz159998","计算机"), ("sz159869","游戏"),
+    ("sz159865","养殖"), ("sh516510","云计算"),
+]
+
+
 def fetch_etf_list():
     """新浪全量ETF列表(WAF绕行: 完整浏览器特征)"""
     url = ("https://vip.stock.finance.sina.com.cn/quotes_service/api/jsonp.php/"
@@ -91,8 +103,11 @@ def download_one(sym, out_csv):
 
 
 def main():
-    picks = fetch_etf_list()
-    print(f"待下载: {len(picks)} 只, {picks['主题'].nunique()} 主题", flush=True)
+    try:
+        picks = fetch_etf_list()
+    except Exception:
+        picks = pd.DataFrame(CORE_LIST, columns=["代码","名称"])
+    print(f"待下载: {len(picks)} 只", flush=True)
     ok = skip = fail = 0
     t0 = time.time()
     for i, (_, r) in enumerate(picks.iterrows(), 1):
