@@ -34,3 +34,5 @@ backtests/
 # Streamlit
 dashboard/.streamlit/secrets.toml
 .claude/
+!data/etf_sector/
+!data/stock_aux/
