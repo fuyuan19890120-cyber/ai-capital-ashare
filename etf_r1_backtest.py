@@ -114,9 +114,14 @@ def load_industry_profit():
     return dict(sorted(out.items()))
 
 
-def build_surge(index_close, etf_close, regime_series, cal, rebal, lock_days=None):
-    """与 run_v5_backtest.build_surge_lock 同一逻辑, 额外返回 锁内日期→触发日 映射"""
+def build_surge(index_close, etf_close, regime_series, cal, rebal, lock_days=None,
+                s30_min=None, base_min=None, lookback=None, breadth_hi=None):
+    """SURGE 触发器(参数化版); 额外返回 锁内日期→触发日 映射"""
     ld = lock_days if lock_days is not None else S_LOCK
+    sm = s30_min if s30_min is not None else S_S30
+    bm = base_min if base_min is not None else S_BASE
+    lb = lookback if lookback is not None else S_LOOKBACK
+    bh = breadth_hi if breadth_hi is not None else 2/3
     sma30 = index_close.rolling(30).mean(); sma50 = index_close.rolling(50).mean()
     dev30 = (index_close - sma30) / sma30
     s30 = 0.6 * (0.5 + 0.5 * np.tanh(dev30 * 10)) + 0.4 * (sma50 > sma30).astype(float)
@@ -124,7 +129,7 @@ def build_surge(index_close, etf_close, regime_series, cal, rebal, lock_days=Non
                             for e in ["sh510300", "sh510500", "sz159915"]}).mean(axis=1)
     s30, breadth = s30.reindex(cal), breadth.reindex(cal)
     base = regime_series.reindex(cal)
-    trig = (base >= S_BASE) & (s30 >= S_S30) & (breadth > 2/3 + 1e-9) & (breadth.shift(S_LOOKBACK) < 1/3)
+    trig = (base >= bm) & (s30 >= sm) & (breadth > bh + 1e-9) & (breadth.shift(lb) < 1/3)
 
     rebal_set = set(rebal)
     extra, forced, d2trig = [], {}, {}
