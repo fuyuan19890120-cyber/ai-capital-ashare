@@ -191,7 +191,10 @@
       "final_nav": 0.667,
       "return_pct": -33.3,
       "max_dd_pct": -36.3,
-      "last_n_days": 18
+      "last_n_days": 18,
+      "initial_capital": 500000,
+      "current_value": 333500.0,
+      "profit": -166500.0
     },
     "v42": {
       "navs": [
@@ -272,7 +275,10 @@
       "final_nav": 0.667,
       "return_pct": -33.3,
       "max_dd_pct": -36.3,
-      "last_n_days": 18
+      "last_n_days": 18,
+      "initial_capital": 500000,
+      "current_value": 333500.0,
+      "profit": -166500.0
     },
     "v43": {
       "navs": [
@@ -353,7 +359,10 @@
       "final_nav": 0.8696,
       "return_pct": -13.0,
       "max_dd_pct": -18.2,
-      "last_n_days": 18
+      "last_n_days": 18,
+      "initial_capital": 500000,
+      "current_value": 434800.0,
+      "profit": -65200.0
     }
   },
   "csi300": {

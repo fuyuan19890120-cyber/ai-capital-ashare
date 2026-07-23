@@ -94,11 +94,15 @@ if tracker:
     rows = []
     for key, label in [('v41','V4.1'),('v42','V4.2'),('v43','V4.3')]:
         d = tb.get(key, {})
+        pct = d.get('return_pct', 0)
+        profit = d.get('profit', 0)
+        val = d.get('current_value', 0)
         rows.append({
             '策略': label,
-            '累计收益': f"{d.get('return_pct', 0):+.1f}%",
+            '累计盈亏': f"{profit:+,.0f}元",
+            '累计收益率': f"{pct:+.1f}%",
             '最大回撤': f"{d.get('max_dd_pct', 0):.1f}%",
-            '最新净值': f"{d.get('final_nav', 1):.4f}",
+            '当前市值': f"{val:,.0f}元",
             '持有天数': d.get('last_n_days', 0),
         })
     if tc:
