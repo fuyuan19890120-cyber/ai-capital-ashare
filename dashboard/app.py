@@ -12,6 +12,35 @@ st.set_page_config(page_title="策略一 · V4 三代对比", page_icon="📊", 
 TRACKER_FILE = os.path.join(os.path.dirname(__file__), "tracker.json")
 
 # ═══════════════════════════════════════════
+# 股票名称缓存 (只加载一次)
+# ═══════════════════════════════════════════
+@st.cache_data(ttl=86400)
+def get_stock_names():
+    names = {}
+    try:
+        import akshare as ak
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        for idx in ["000300", "399006", "000688"]:
+            try:
+                df = ak.index_stock_cons(symbol=idx)
+                for _, row in df.iterrows():
+                    names[str(row['品种代码']).zfill(6)] = row['品种名称']
+            except:
+                pass
+    except:
+        pass
+    return names
+
+STOCK_NAMES = get_stock_names()
+
+def stock_display(code):
+    """带名称展示: 300001.SZ → 300001 特锐德"""
+    num = code.split('.')[0]
+    name = STOCK_NAMES.get(num, '')
+    return f"{code}  {name}" if name else code
+
+# ═══════════════════════════════════════════
 # 数据加载
 # ═══════════════════════════════════════════
 tracker = None
@@ -110,7 +139,7 @@ if tracker:
         with col:
             st.markdown(f"**{label}**")
             for s in rb[key]:
-                st.caption(s)
+                st.caption(stock_display(s))
 
 # ═══════════════════════════════════════════
 # 回测区
