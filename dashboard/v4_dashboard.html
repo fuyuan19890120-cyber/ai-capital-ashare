@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>V4.3 策略监控看板</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e1e4e8;padding:20px}
+.header{text-align:center;padding:30px 0;border-bottom:1px solid #21262d;margin-bottom:30px}
+.header h1{font-size:28px;color:#58a6ff}
+.header p{color:#8b949e;margin-top:8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;margin-bottom:30px}
+.card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px}
+.card h3{font-size:14px;color:#8b949e;text-transform:uppercase;margin-bottom:12px}
+.metric{font-size:36px;font-weight:700}
+.metric.green{color:#3fb950}
+.metric.red{color:#f85149}
+.metric.blue{color:#58a6ff}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid #21262d}
+th{color:#8b949e;font-size:12px;text-transform:uppercase}
+td{font-size:14px}
+tr:hover{background:#1c2129}
+.tag{padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.tag.riskon{background:#3fb95022;color:#3fb950}
+.tag.neutral{background:#d2992222;color:#d29922}
+.tag.riskoff{background:#f8514922;color:#f85149}
+.tag.crisis{background:#8b949e22;color:#8b949e}
+.tag.surge{background:#58a6ff22;color:#58a6ff}
+.bar{height:6px;border-radius:3px;margin-top:4px}
+.bar-bg{background:#21262d;border-radius:3px}
+.signal-row{cursor:pointer}
+.signal-detail{display:none;background:#0d1117;padding:12px;margin:8px 0;border-radius:6px;font-size:13px}
+.tabs{display:flex;gap:10px;margin-bottom:20px}
+.tab{padding:8px 20px;background:#161b22;border:1px solid #21262d;border-radius:6px;cursor:pointer;color:#8b949e}
+.tab.active{background:#1f6feb22;border-color:#58a6ff;color:#58a6ff}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>策略一 V4.3 — Amihud × MomR²</h1>
+  <p>QMT 完整数据库 | 指数成分股宇宙 | SURGE 广度锁定 | 最后更新: <span id="updateTime">—</span></p>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3>年化收益 (全样本)</h3>
+    <div class="metric green">29.4%</div>
+    <div style="color:#8b949e;font-size:12px">V4.3 + SURGE</div>
+  </div>
+  <div class="card">
+    <h3>最大回撤</h3>
+    <div class="metric red">-25.3%</div>
+    <div style="color:#8b949e;font-size:12px"></div>
+  </div>
+  <div class="card">
+    <h3>夏普比率</h3>
+    <div class="metric blue">1.33</div>
+    <div style="color:#8b949e;font-size:12px"></div>
+  </div>
+  <div class="card">
+    <h3>当前制度</h3>
+    <div id="currentRegime" class="metric blue">—</div>
+    <div style="color:#8b949e;font-size:12px" id="regimeDetail"></div>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('overview')">策略总览</div>
+  <div class="tab" onclick="switchTab('signals')">历史信号</div>
+  <div class="tab" onclick="switchTab('compare')">三代对比</div>
+</div>
+
+<div id="tab-overview">
+  <div class="card" style="margin-bottom:20px">
+    <h3>策略规格</h3>
+    <table>
+      <tr><td style="color:#8b949e;width:140px">因子 1</td><td>Amihud 非流动性 (30%) — 20日 |ret|/amount 均值</td></tr>
+      <tr><td style="color:#8b949e">因子 2</td><td>动量×R² (70%) — 120日 log(price) OLS 斜率×R²</td></tr>
+      <tr><td style="color:#8b949e">融合方式</td><td>截面排名归一化 + 加权求和</td></tr>
+      <tr><td style="color:#8b949e">择时</td><td>SMA250 四档 (RISKON/NEUTRAL/RISKOFF/CRISIS)</td></tr>
+      <tr><td style="color:#8b949e">加速</td><td>SURGE 广度锁定 (3 ETF SMA50 比例回升)</td></tr>
+      <tr><td style="color:#8b949e">宇宙</td><td>CSI300(288) + 创业板指(100) + 科创50(50) = 386只</td></tr>
+      <tr><td style="color:#8b949e">执行</td><td>Top-15 等权, T+1 开盘, 佣金0.025%+印花税0.05%+滑点0.1%</td></tr>
+      <tr><td style="color:#8b949e">流动性门槛</td><td>日均成交额 ≥ 5000万</td></tr>
+    </table>
+  </div>
+
+  <div class="card" style="margin-bottom:20px">
+    <h3>逐年收益</h3>
+    <table>
+      <tr><th>年份</th><th>V4.3+SURGE</th><th>CSI300</th><th>超额</th></tr>
+      <tr><td>2016</td><td style="color:#f85149">-3.4%</td><td style="color:#f85149">-4.6%</td><td style="color:#3fb950">+1.2%</td></tr>
+      <tr><td>2017</td><td style="color:#3fb950">+18.8%</td><td style="color:#3fb950">+20.6%</td><td style="color:#f85149">-1.8%</td></tr>
+      <tr><td>2018</td><td style="color:#3fb950">+0.8%</td><td style="color:#f85149">-26.3%</td><td style="color:#3fb950">+27.1%</td></tr>
+      <tr><td>2019</td><td style="color:#3fb950">+27.9%</td><td style="color:#3fb950">+38.0%</td><td style="color:#f85149">-10.1%</td></tr>
+      <tr><td>2020</td><td style="color:#3fb950">+101.1%</td><td style="color:#3fb950">+25.5%</td><td style="color:#3fb950">+75.6%</td></tr>
+      <tr><td>2021</td><td style="color:#3fb950">+43.8%</td><td style="color:#f85149">-6.2%</td><td style="color:#3fb950">+50.0%</td></tr>
+      <tr><td>2022</td><td style="color:#3fb950">+1.5%</td><td style="color:#f85149">-21.3%</td><td style="color:#3fb950">+22.8%</td></tr>
+      <tr><td>2023</td><td style="color:#3fb950">+0.2%</td><td style="color:#f85149">-11.7%</td><td style="color:#3fb950">+11.9%</td></tr>
+      <tr><td>2024</td><td style="color:#3fb950">+21.1%</td><td style="color:#3fb950">+16.2%</td><td style="color:#3fb950">+4.9%</td></tr>
+      <tr><td>2025</td><td style="color:#3fb950">+111.1%</td><td style="color:#3fb950">+21.2%</td><td style="color:#3fb950">+89.9%</td></tr>
+      <tr><td>2026</td><td style="color:#3fb950">+57.5%</td><td style="color:#3fb950">+0.2%</td><td style="color:#3fb950">+57.3%</td></tr>
+    </table>
+  </div>
+</div>
+
+<div id="tab-signals" style="display:none">
+  <div class="card">
+    <h3>交易信号历史</h3>
+    <div id="signalList">加载中...</div>
+  </div>
+</div>
+
+<div id="tab-compare" style="display:none">
+  <div class="card">
+    <h3>V4.1 / V4.2 / V4.3 对比 (均含 SURGE)</h3>
+    <table>
+      <tr><th>指标</th><th>V4.1</th><th>V4.2</th><th style="color:#58a6ff">V4.3</th></tr>
+      <tr><td>因子</td><td>低波43%+动量45%</td><td>V4.1+反转过滤15%</td><td style="color:#58a6ff">Amihud30%+MomR²70%</td></tr>
+      <tr><td>年化收益</td><td>16.0%</td><td>15.0%</td><td style="color:#3fb950;font-weight:700">29.4%</td></tr>
+      <tr><td>最大回撤</td><td>-35.2%</td><td>-27.8%</td><td style="color:#3fb950;font-weight:700">-25.3%</td></tr>
+      <tr><td>夏普比率</td><td>0.75</td><td>0.80</td><td style="color:#3fb950;font-weight:700">1.33</td></tr>
+      <tr><td>最终净值</td><td>5.2x</td><td>4.8x</td><td style="color:#3fb950;font-weight:700">17.6x</td></tr>
+      <tr><td>SURGE增益</td><td>+0.8pp</td><td>+0.6pp</td><td style="color:#3fb950;font-weight:700">+2.9pp</td></tr>
+    </table>
+  </div>
+</div>
+
+<script>
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`[onclick="switchTab('${tab}')"]`).classList.add('active');
+  document.getElementById('tab-overview').style.display = tab === 'overview' ? 'block' : 'none';
+  document.getElementById('tab-signals').style.display = tab === 'signals' ? 'block' : 'none';
+  document.getElementById('tab-compare').style.display = tab === 'compare' ? 'block' : 'none';
+}
+
+// 加载信号文件
+async function loadSignals() {
+  try {
+    const resp = await fetch('/signals/');
+    const text = await resp.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, 'text/html');
+    const links = [...doc.querySelectorAll('a')].filter(a => a.href.endsWith('.json'));
+
+    const signals = [];
+    for (const link of links.slice(-12)) {
+      try {
+        const r = await fetch(link.href);
+        const data = await r.json();
+        signals.push(data);
+      } catch(e) {}
+    }
+
+    signals.sort((a,b) => b.date.localeCompare(a.date));
+
+    // 最近信号
+    if (signals.length > 0) {
+      const latest = signals[0];
+      document.getElementById('updateTime').textContent = latest.date;
+
+      const regimeTag = latest.surge_triggered ? 'SURGE RISKON' : latest.regime;
+      const tagClass = latest.surge_triggered ? 'surge' : latest.regime.toLowerCase();
+      document.getElementById('currentRegime').innerHTML = `<span class="tag ${tagClass}">${regimeTag}</span>`;
+      document.getElementById('regimeDetail').textContent = `股票仓位 ${Math.round(latest.eq_allocation*100)}% | 选中 ${latest.selected_stocks.length} 只`;
+    }
+
+    // 信号列表
+    const list = document.getElementById('signalList');
+    if (signals.length === 0) {
+      list.innerHTML = '<p style="color:#8b949e">暂无信号记录。运行 signal_generator_v4.py 生成第一条。</p>';
+      return;
+    }
+
+    let html = '<table><tr><th>日期</th><th>策略</th><th>制度</th><th>选股数</th><th>买入</th><th>卖出</th></tr>';
+    for (const s of signals) {
+      const regimeTag = s.surge_triggered ? 'SURGE' : s.regime;
+      html += `<tr class="signal-row" onclick="toggleDetail(this)" data-signal='${JSON.stringify(s)}'>
+        <td>${s.date}</td><td>${s.strategy.toUpperCase()}</td>
+        <td><span class="tag ${regimeTag.toLowerCase()}">${regimeTag}</span></td>
+        <td>${s.selected_stocks?.length||0}</td>
+        <td>${s.to_buy?.length||0}</td><td>${s.to_sell?.length||0}</td>
+      </tr>`;
+    }
+    html += '</table>';
+    list.innerHTML = html;
+  } catch(e) {
+    document.getElementById('signalList').innerHTML = '<p style="color:#8b949e">无法加载信号文件。请确认 signals/ 目录存在。</p>';
+  }
+}
+
+function toggleDetail(row) {
+  let detail = row.nextElementSibling;
+  if (detail && detail.classList.contains('signal-detail')) {
+    detail.style.display = detail.style.display === 'block' ? 'none' : 'block';
+    return;
+  }
+  const data = JSON.parse(row.dataset.signal);
+  detail = document.createElement('tr');
+  detail.className = 'signal-detail';
+  detail.innerHTML = `<td colspan="6">
+    <strong>选中:</strong> ${(data.selected_stocks||[]).join(', ')}<br>
+    <strong>买入:</strong> ${(data.to_buy||[]).join(', ')}<br>
+    <strong>卖出:</strong> ${(data.to_sell||[]).join(', ')}
+  </td>`;
+  detail.style.display = 'block';
+  row.parentNode.insertBefore(detail, row.nextElementSibling);
+}
+
+loadSignals();
+</script>
+</body>
+</html>
