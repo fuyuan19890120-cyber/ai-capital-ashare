@@ -2,10 +2,12 @@
 """
 ETF-R2 最终定稿
 选股: Mom×R² (30日对数回归动量×R²) 直接在37只精选ETF上计算
-择时: 四档制度 + SURGE 原始设计 (breadth≥2/3, lock=21d)
+择时: V2/四档双框架 + SURGE 原始设计 (breadth≥2/3, lock=56d, WFE验证通过)
 数据: qmt_qfq.db (QMT前复权)
 
-回测(2015-2026): 年化17.73% / 回撤-26.2% / 夏普0.97
+回测(2015-2026):
+  V2+56d: 年化17.85% / 回撤-21.8% / 夏普1.05
+  四档+56d: 年化20.63% / 回撤-21.8% / 夏普1.14
 """
 import os, sys, json, warnings; warnings.filterwarnings('ignore')
 import pandas as pd, numpy as np
@@ -224,15 +226,15 @@ def main():
 
     # 运行两个框架
     print("运行回测...")
-    s_v2 = run_one("V2两档+SURGE28d", rs_v2, lock_days=28)
-    s_s4 = run_one("四档+SURGE21d", rs_orig, lock_days=21)
+    s_v2 = run_one("V2两档+56d", rs_v2, lock_days=56)
+    s_s4 = run_one("四档+56d", rs_orig, lock_days=56)
 
     # 汇总
     all_years = sorted(set(list(s_v2["yearly"].keys()) + list(s_s4["yearly"].keys())))
     print(f"\n{'='*55}")
     print("ETF-R2 最终结果")
     print(f"{'='*55}")
-    print(f"  {'':<20} {'V2两档+SURGE28d':>18} {'四档+SURGE21d':>18}")
+    print(f"  {'':<20} {'V2两档+56d':>18} {'四档+56d':>18}")
     print(f"  {'年化':<20} {s_v2['ann']:>17.2f}% {s_s4['ann']:>17.2f}%")
     print(f"  {'最大回撤':<20} {s_v2['mdd']:>17.1f}% {s_s4['mdd']:>17.1f}%")
     print(f"  {'夏普':<20} {s_v2['sharpe']:>18.2f} {s_s4['sharpe']:>18.2f}")
