@@ -118,12 +118,6 @@ def build_surge(index_close, etf_close, regime_series, cal, rebal, lock_days=28)
 
     return pd.DatetimeIndex(extra), forced, d2trig
 
-# ── 制度分 ──────────────────────────────────────────────
-def regime_score(close):
-    s250 = close.rolling(250).mean(); s50 = close.rolling(50).mean()
-    dev = (close - s250) / s250
-    return 0.6 * (0.5 + 0.5 * np.tanh(dev * 10)) + 0.4 * (s50 > s250).astype(float)
-
 # ── Q100 因子 ───────────────────────────────────────────
 def compute_q100(stock_data, date):
     """Quality: 250日涨幅≥0 → log变换, 负收益=0"""
@@ -209,7 +203,7 @@ def main():
 
     # 加载个股 + 指数
     idx_close = load_qmt_benchmark("000300.SH")
-    rs = regime_score(idx_close["close"]).dropna()
+    rs = compute_regime(idx_close["close"])
     rs = rs[rs.index >= START_DATE]
     sd = load_qmt_stocks(min_history=250)
 

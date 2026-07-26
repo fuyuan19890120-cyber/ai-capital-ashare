@@ -2,10 +2,10 @@
 """
 ETF-R2 最终定稿
 选股: Mom×R² (30日对数回归动量×R²) 直接在37只精选ETF上计算
-择时: 四档制度 + SURGE 原始设计 (breadth≥2/3)
+择时: V2两档 + SURGE 原始设计 (breadth≥2/3, lock=28d)
 数据: qmt_qfq.db (QMT前复权)
 
-回测(2015-2026): 年化17.73% / 回撤-26.2% / 夏普0.97
+回测(2015-2026): 年化17.01% / 回撤-23.7% / 夏普0.94
 """
 import os, sys, json, warnings; warnings.filterwarnings('ignore')
 import pandas as pd, numpy as np
@@ -108,13 +108,6 @@ def build_surge(index_close, etf_close, regime_series, cal, rebal, lock_days=21)
 
     return pd.DatetimeIndex(extra), forced, d2trig
 
-# ── 制度分 ──────────────────────────────────────────────
-def regime_score(close):
-    s250 = close.rolling(250).mean()
-    s50 = close.rolling(50).mean()
-    dev = (close - s250) / s250
-    return 0.6 * (0.5 + 0.5 * np.tanh(dev * 10)) + 0.4 * (s50 > s250).astype(float)
-
 # ── 因子: Mom×R² (30日) ─────────────────────────────────
 def compute_mom_r2(date, dfc, lo, window=30):
     scores = {}
@@ -169,7 +162,7 @@ def make_selector(dfc, lo):
 # ── 主流程 ──────────────────────────────────────────────
 def main():
     print("=" * 55)
-    print("ETF-R2 最终定稿: Mom×R² + 四档 + SURGE≥2/3")
+    print("ETF-R2 最终定稿: Mom×R² + V2两档 + SURGE≥2/3")
     print("=" * 55)
 
     # 加载数据
@@ -185,8 +178,13 @@ def main():
         dfc = dfc.loc[:min(ends)].ffill(limit=5)
 
     idx_close = load_qmt_benchmark("000300.SH")
-    rs = regime_score(idx_close["close"]).dropna()
+    rs = compute_regime(idx_close["close"])
     rs = rs[rs.index >= START_DATE]
+
+    # V2 两档
+    rs_v2 = rs.copy()
+    for d in rs_v2.index:
+        rs_v2.loc[d] = 0.85 if rs_v2.loc[d] >= 0.70 else 0.20
 
     cal = dfc.index[dfc.index >= START_DATE]
     me = month_end_dates(cal)
@@ -194,7 +192,7 @@ def main():
     lo = lambda s, d: (lc.at[d, s] if s in dfc.columns else 0) >= 20
 
     # SURGE
-    extra, forced, d2t = build_surge(idx_close["close"], dfc, rs, cal, me, lock_days=21)
+    extra, forced, d2t = build_surge(idx_close["close"], dfc, rs, cal, me, lock_days=28)
     rd = pd.DatetimeIndex(sorted(set(me) | set(extra)))
 
     # 选股
@@ -203,7 +201,7 @@ def main():
     # 回测
     print("运行回测...")
     result = run_stock_backtest(
-        dfc, rs, {}, top_n=4, verbose=False,
+        dfc, rs_v2, {}, top_n=4, verbose=False,
         execution="next_open", stamp_duty=True, ffill_valuation=True,
         df_open=None, rebalance_dates=rd,
         select_fn=lambda d: selector(d, d2t),
@@ -220,7 +218,7 @@ def main():
     turnover = result["metrics"]["annual_turnover_x"]
 
     print(f"\n{'='*55}")
-    print("ETF-R2 最终结果")
+    print("ETF-R2 最终结果 (V2两档)")
     print(f"{'='*55}")
     print(f"  年化收益:  {ann*100:.2f}%")
     print(f"  最大回撤:  {dd*100:.1f}%")
@@ -237,6 +235,7 @@ def main():
     print(f"\n  SURGE: {surge_count}次触发")
     print(f"  ETF池: {len(SECTOR_ETFS)}只行业 + {len(BROAD)}宽基 + {len(DEFENSE)}防守")
     print(f"  因子:  Mom×R² (30日窗口)")
+    print(f"  框架:  V2两档 + SURGE28d")
     print(f"  数据:  qmt_qfq.db (QMT前复权)")
 
     # 保存
@@ -246,7 +245,7 @@ def main():
         json.dump({
             "strategy": "ETF-R2",
             "factor": "Mom×R² 30d",
-            "framework": "四档+SURGE21d",
+            "framework": "V2两档+SURGE28d",
             "pool": f"{len(SECTOR_ETFS)} sector + {len(BROAD)} broad + {len(DEFENSE)} defense",
             "ann": round(ann * 100, 2), "mdd": round(dd * 100, 1),
             "sharpe": round(sh, 2), "turnover": round(turnover, 1),
