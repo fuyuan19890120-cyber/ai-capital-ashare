@@ -160,41 +160,12 @@ def make_selector(dfc, lo):
     return select
 
 # ── 主流程 ──────────────────────────────────────────────
-def main():
-    print("=" * 55)
-    print("ETF-R2 最终定稿: Mom×R² + 四档 + SURGE≥2/3")
-    print("=" * 55)
-
-    # 加载数据
-    print("加载 ETF 数据...")
-    etf_data = load_qmt_etfs(ALL_ETFS, verbose=False)
-    closes = {}
-    for s in ALL_ETFS:
-        if s in etf_data:
-            closes[s] = etf_data[s]["close"]
-    dfc = pd.DataFrame(closes).sort_index().dropna(how="all")
-    ends = [dfc[s].last_valid_index() for s in BROAD + DEFENSE if s in dfc.columns]
-    if ends:
-        dfc = dfc.loc[:min(ends)].ffill(limit=5)
-
-    idx_close = load_qmt_benchmark("000300.SH")
-    rs = compute_regime(idx_close["close"])
-    rs = rs[rs.index >= START_DATE]
-
-    cal = dfc.index[dfc.index >= START_DATE]
-    me = month_end_dates(cal)
-    lc = dfc.notna().cumsum()
-    lo = lambda s, d: (lc.at[d, s] if s in dfc.columns else 0) >= 20
-
-    # SURGE (lock=21d for 四档)
-    extra, forced, d2t = build_surge(idx_close["close"], dfc, rs, cal, me, lock_days=21)
+def run_one(name, rs, lock_days):
+    """运行一次回测, 返回 stats dict"""
+    extra, forced, d2t = build_surge(idx_close["close"], dfc, rs_orig, cal, me, lock_days=lock_days)
     rd = pd.DatetimeIndex(sorted(set(me) | set(extra)))
-
-    # 选股
     selector = make_selector(dfc, lo)
 
-    # 回测（直接用四档原始制度分，不做二值化）
-    print("运行回测...")
     result = run_stock_backtest(
         dfc, rs, {}, top_n=4, verbose=False,
         execution="next_open", stamp_duty=True, ffill_valuation=True,
@@ -203,7 +174,6 @@ def main():
         forced_regime=forced
     )
 
-    # 统计
     v = result["values"]["value"]
     rt = v.pct_change().dropna()
     yrs = len(rt) / 244
@@ -211,26 +181,71 @@ def main():
     dd = (v / v.cummax() - 1).min()
     sh = rt.mean() / rt.std() * np.sqrt(244)
     turnover = result["metrics"]["annual_turnover_x"]
-
-    print(f"\n{'='*55}")
-    print("ETF-R2 最终结果 (四档)")
-    print(f"{'='*55}")
-    print(f"  年化收益:  {ann*100:.2f}%")
-    print(f"  最大回撤:  {dd*100:.1f}%")
-    print(f"  夏普比率:  {sh:.2f}")
-    print(f"  换手率:    {turnover:.1f}x")
-
     yearly = rt.groupby(rt.index.year).apply(lambda x: ((1 + x).prod() - 1) * 100)
-    print(f"\n  逐年收益:")
-    for yr, val in yearly.items():
-        if yr >= 2016:
-            print(f"    {yr}: {val:+.1f}%")
-
     surge_count = len(set(d2t.values())) - 1
-    print(f"\n  SURGE: {surge_count}次触发")
-    print(f"  ETF池: {len(SECTOR_ETFS)}只行业 + {len(BROAD)}宽基 + {len(DEFENSE)}防守")
+
+    return {
+        "name": name, "ann": round(ann * 100, 2), "mdd": round(dd * 100, 1),
+        "sharpe": round(sh, 2), "turnover": round(turnover, 1), "surge": surge_count,
+        "yearly": {int(k): round(v, 1) for k, v in yearly.items()}
+    }
+
+def main():
+    print("=" * 55)
+    print("ETF-R2 最终定稿: Mom×R² + V2/四档 双框架")
+    print("=" * 55)
+
+    # 加载数据（只做一次）
+    print("加载 ETF 数据...")
+    etf_data = load_qmt_etfs(ALL_ETFS, verbose=False)
+    closes = {}
+    for s in ALL_ETFS:
+        if s in etf_data:
+            closes[s] = etf_data[s]["close"]
+    global dfc, dfo, idx_close, rs_orig, cal, me, lc, lo
+    dfc = pd.DataFrame(closes).sort_index().dropna(how="all")
+    ends = [dfc[s].last_valid_index() for s in BROAD + DEFENSE if s in dfc.columns]
+    if ends:
+        dfc = dfc.loc[:min(ends)].ffill(limit=5)
+
+    idx_close = load_qmt_benchmark("000300.SH")
+    rs_orig = compute_regime(idx_close["close"])
+    rs_orig = rs_orig[rs_orig.index >= START_DATE]
+
+    cal = dfc.index[dfc.index >= START_DATE]
+    me = month_end_dates(cal)
+    lc = dfc.notna().cumsum()
+    lo = lambda s, d: (lc.at[d, s] if s in dfc.columns else 0) >= 20
+
+    # V2 两档
+    rs_v2 = rs_orig.copy()
+    for d in rs_v2.index:
+        rs_v2.loc[d] = 0.85 if rs_v2.loc[d] >= 0.70 else 0.20
+
+    # 运行两个框架
+    print("运行回测...")
+    s_v2 = run_one("V2两档+SURGE28d", rs_v2, lock_days=28)
+    s_s4 = run_one("四档+SURGE21d", rs_orig, lock_days=21)
+
+    # 汇总
+    all_years = sorted(set(list(s_v2["yearly"].keys()) + list(s_s4["yearly"].keys())))
+    print(f"\n{'='*55}")
+    print("ETF-R2 最终结果")
+    print(f"{'='*55}")
+    print(f"  {'':<20} {'V2两档+SURGE28d':>18} {'四档+SURGE21d':>18}")
+    print(f"  {'年化':<20} {s_v2['ann']:>17.2f}% {s_s4['ann']:>17.2f}%")
+    print(f"  {'最大回撤':<20} {s_v2['mdd']:>17.1f}% {s_s4['mdd']:>17.1f}%")
+    print(f"  {'夏普':<20} {s_v2['sharpe']:>18.2f} {s_s4['sharpe']:>18.2f}")
+    print(f"  {'SURGE次数':<20} {s_v2['surge']:>18} {s_s4['surge']:>18}")
+
+    print(f"\n逐年收益:")
+    print(f"  {'年':<6} {'V2两档':>10} {'四档':>10}")
+    for yr in all_years:
+        if yr >= 2016:
+            print(f"  {yr:<6} {s_v2['yearly'].get(yr,0):>+9.1f}% {s_s4['yearly'].get(yr,0):>+9.1f}%")
+
+    print(f"\n  ETF池: {len(SECTOR_ETFS)}只行业 + {len(BROAD)}宽基 + {len(DEFENSE)}防守")
     print(f"  因子:  Mom×R² (30日窗口)")
-    print(f"  框架:  四档 + SURGE21d")
     print(f"  数据:  qmt_qfq.db (QMT前复权)")
 
     # 保存
@@ -238,13 +253,11 @@ def main():
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w") as f:
         json.dump({
-            "strategy": "ETF-R2",
-            "factor": "Mom×R² 30d",
-            "framework": "四档+SURGE21d",
-            "pool": f"{len(SECTOR_ETFS)} sector + {len(BROAD)} broad + {len(DEFENSE)} defense",
-            "ann": round(ann * 100, 2), "mdd": round(dd * 100, 1),
-            "sharpe": round(sh, 2), "turnover": round(turnover, 1),
-            "yearly": {int(k): round(v, 1) for k, v in yearly.items()}
+            "strategy": "ETF-R2", "factor": "Mom×R² 30d",
+            "V2": {"ann": s_v2["ann"], "mdd": s_v2["mdd"], "sharpe": s_v2["sharpe"],
+                   "turnover": s_v2["turnover"], "surge": s_v2["surge"], "yearly": s_v2["yearly"]},
+            "S4": {"ann": s_s4["ann"], "mdd": s_s4["mdd"], "sharpe": s_s4["sharpe"],
+                   "turnover": s_s4["turnover"], "surge": s_s4["surge"], "yearly": s_s4["yearly"]}
         }, f, ensure_ascii=False, indent=2)
     print(f"\n  [saved] {out}")
 
