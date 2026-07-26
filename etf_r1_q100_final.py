@@ -6,6 +6,7 @@ ETF-R1 最终版: Q100 因子 + 三个变体框架
 - 四档+SURGE21d (最均衡)
 因子: Quality (250日涨幅,≥0), 纯量价, 在QMT个股上计算
 数据: qmt_qfq.db (ETF) + qmt_full.db (个股) + industry_map_bs.csv
+SURGE: 原始设计 — breadth ≥ 2/3 即触发（三宽基中≥2只站上SMA50）
 """
 import os, sys, json, warnings; warnings.filterwarnings('ignore')
 import pandas as pd, numpy as np
@@ -15,10 +16,37 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.expanduser("~/ai-capital-ashare/.claude/worktrees/etf-r1"))
 
 from config import START_DATE
-from etf_r1_backtest import build_surge
 from run_final_backtest import compute_regime
 from run_v5_backtest import month_end_dates
 from src.stock_backtest import run_stock_backtest
+
+# ── SURGE 原始设计: breadth ≥ 2/3 即触发 (无15日跳跃条件) ──
+def build_surge(index_close, etf_close, regime_series, cal, rebal, lock_days=21):
+    sma50 = index_close.rolling(50).mean(); sma30 = index_close.rolling(30).mean()
+    dev30 = (index_close - sma30) / sma30
+    s30 = 0.6 * (0.5 + 0.5 * np.tanh(dev30 * 10)) + 0.4 * (sma50 > sma30).astype(float)
+    breadth = pd.DataFrame({e: (etf_close[e] > etf_close[e].rolling(50).mean()).astype(float)
+                            for e in ["sh510300","sh510500","sz159915"]}).mean(axis=1)
+    s30, breadth = s30.reindex(cal), breadth.reindex(cal)
+    base = regime_series.reindex(cal)
+    trig = (base >= 0.15) & (s30 >= 0.70) & (breadth >= 2/3)
+    rebal_set = set(rebal)
+    extra, forced, d2trig = [], {}, {}
+    lock_until, last_regime, cur_trig = -1, 'NEUTRAL', None
+    def reg(s):
+        return 'RISKON' if s >= .70 else 'NEUTRAL' if s >= .50 else 'RISKOFF' if s >= .30 else 'CRISIS'
+    for i, d in enumerate(cal):
+        if i <= lock_until:
+            d2trig[d] = cur_trig
+            if d in rebal_set: forced[d] = 'RISKON'; last_regime = 'RISKON'
+            continue
+        if d in rebal_set and d in regime_series.index:
+            last_regime = reg(float(regime_series.loc[d]))
+        if bool(trig.get(d, False)):
+            lock_until = i + lock_days - 1; cur_trig = d; d2trig[d] = d; forced[d] = 'RISKON'
+            if last_regime != 'RISKON' and d not in rebal_set: extra.append(d)
+            last_regime = 'RISKON'
+    return pd.DatetimeIndex(extra), forced, d2trig
 
 try:
     from src.qmt_adapter import load_qmt_etfs, load_qmt_benchmark, load_qmt_stocks
