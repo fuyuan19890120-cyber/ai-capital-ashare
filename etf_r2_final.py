@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
 ETF-R2 最终定稿
-选股: Mom×R² (30日对数回归动量×R²) 直接在37只精选ETF上计算
-择时: V2/四档双框架 + SURGE 原始设计 (breadth≥2/3, lock=56d, WFE验证通过)
+选股: Mom×R² (30日对数回归动量×R²) 在时间点池上计算
+择时: V2/四档双框架 + SURGE (breadth≥2/3, lock=14d, 8%熔断)
+权重: 四档=行业70%+成长30%, V2=等权50/50
 数据: qmt_qfq.db (QMT前复权)
 
-回测(2015-2026):
-  V2+56d: 年化17.85% / 回撤-21.8% / 夏普1.05
-  四档+56d: 年化20.63% / 回撤-21.8% / 夏普1.14
+回测(2015-2026, 严格验证):
+  四档+14d: 年化16.21% / 回撤-24.8% / 夏普0.87
+  V2+14d:   年化15.02% / 回撤-23.9% / 夏普0.87
 """
 import os, sys, json, warnings; warnings.filterwarnings('ignore')
 import pandas as pd, numpy as np
@@ -133,7 +134,8 @@ def compute_mom_r2(date, dfc, lo, window=30):
     return scores
 
 # ── 选股 ────────────────────────────────────────────────
-def make_selector(dfc, lo):
+def make_selector(dfc, lo, sector_pct=50):
+    """sector_pct: 行业ETF占比 (50=等权/70=七成). SURGE始终50/50."""
     cache = {}
 
     def select(date, d2t):
@@ -143,18 +145,23 @@ def make_selector(dfc, lo):
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
         is_surge = d2t.get(date) is not None
+        top_s = [e for e, _ in ranked[:2] if lo(e, date)]
+        if len(top_s) < 2:
+            top_s = [s for s in BROAD if lo(s, date)][:2]
+
         if is_surge:
             # SURGE: 纯2行业, 各50%
-            picks = [e for e, _ in ranked[:2]]
+            picks = [(top_s[0], 0.5), (top_s[1], 0.5)]
         else:
-            # 普通RISKON: 2行业 + 创业板50 + 科创50
-            picks = [e for e, _ in ranked[:2]]
+            sw = sector_pct / 200  # 每只行业权重
+            gp = (100 - sector_pct) / 200  # 每只成长权重
+            picks = [(top_s[0], sw), (top_s[1], sw)]
             for g in ["sz159915", "sh588000"]:
-                if lo(g, date) and g not in picks:
-                    picks.append(g)
+                if lo(g, date) and g not in [c for c, _ in picks]:
+                    picks.append((g, gp))
 
         if len(picks) < 2:
-            picks = [s for s in BROAD if lo(s, date)][:4]
+            picks = [(s, 1.0/len(BROAD)) for s in BROAD if lo(s, date)][:4]
 
         cache[date] = picks[:4]
         return picks[:4]
@@ -162,11 +169,11 @@ def make_selector(dfc, lo):
     return select
 
 # ── 主流程 ──────────────────────────────────────────────
-def run_one(name, rs, lock_days):
+def run_one(name, rs, lock_days, sector_pct=50):
     """运行一次回测, 返回 stats dict"""
     extra, forced, d2t = build_surge(idx_close["close"], dfc, rs_orig, cal, me, lock_days=lock_days)
     rd = pd.DatetimeIndex(sorted(set(me) | set(extra)))
-    selector = make_selector(dfc, lo)
+    selector = make_selector(dfc, lo, sector_pct=sector_pct)
 
     result = run_stock_backtest(
         dfc, rs, {}, top_n=4, verbose=False,
@@ -226,15 +233,15 @@ def main():
 
     # 运行两个框架
     print("运行回测...")
-    s_v2 = run_one("V2两档+56d", rs_v2, lock_days=56)
-    s_s4 = run_one("四档+56d", rs_orig, lock_days=56)
+    s_v2 = run_one("V2两档+14d(50%行业)", rs_v2, lock_days=14, sector_pct=50)
+    s_s4 = run_one("四档+14d(70%行业)", rs_orig, lock_days=14, sector_pct=70)
 
     # 汇总
     all_years = sorted(set(list(s_v2["yearly"].keys()) + list(s_s4["yearly"].keys())))
     print(f"\n{'='*55}")
     print("ETF-R2 最终结果")
     print(f"{'='*55}")
-    print(f"  {'':<20} {'V2两档+56d':>18} {'四档+56d':>18}")
+    print(f"  {'':<20} {'V2两档+14d(50%)':>22} {'四档+14d(70%)':>22}")
     print(f"  {'年化':<20} {s_v2['ann']:>17.2f}% {s_s4['ann']:>17.2f}%")
     print(f"  {'最大回撤':<20} {s_v2['mdd']:>17.1f}% {s_s4['mdd']:>17.1f}%")
     print(f"  {'夏普':<20} {s_v2['sharpe']:>18.2f} {s_s4['sharpe']:>18.2f}")
