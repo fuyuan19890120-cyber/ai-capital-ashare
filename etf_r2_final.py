@@ -85,6 +85,7 @@ def build_surge(index_close, etf_close, regime_series, cal, rebal, lock_days=21)
     rebal_set = set(rebal)
     extra, forced, d2trig = [], {}, {}
     lock_until, last_regime, cur_trig = -1, 'NEUTRAL', None
+    surge_peak = None  # SURGE期间的沪深300高点, 用于8%回撤熔断
 
     def reg(s):
         if s >= .70: return 'RISKON'
@@ -97,6 +98,11 @@ def build_surge(index_close, etf_close, regime_series, cal, rebal, lock_days=21)
             d2trig[d] = cur_trig
             if d in rebal_set:
                 forced[d] = 'RISKON'; last_regime = 'RISKON'
+            # 8%回撤熔断: 从SURGE峰值回撤>8% → 立即退出
+            if surge_peak is not None:
+                curr = index_close.get(d, None)
+                if curr is not None and curr / surge_peak - 1 < -0.08:
+                    lock_until = -1; surge_peak = None; cur_trig = None
             continue
         if d in rebal_set and d in regime_series.index:
             last_regime = reg(float(regime_series.loc[d]))
@@ -105,6 +111,7 @@ def build_surge(index_close, etf_close, regime_series, cal, rebal, lock_days=21)
             cur_trig = d
             d2trig[d] = d
             forced[d] = 'RISKON'
+            surge_peak = index_close.get(d, None)
             if last_regime != 'RISKON' and d not in rebal_set:
                 extra.append(d)
             last_regime = 'RISKON'
