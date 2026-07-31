@@ -7,7 +7,7 @@ jobs:
   generate-and-notify:
     runs-on: ubuntu-latest
     steps:
-      - name: Download script and database
+      - name: Download files
         run: |
           curl -fsSL -o r3_github_action.py https://raw.githubusercontent.com/fuyuan19890120-cyber/ai-capital-ashare/main/r3_github_action.py
           mkdir -p data
