@@ -9,9 +9,12 @@ jobs:
   generate-and-notify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 1
+      - name: Download script and database
+        run: |
+          curl -L -o r3_github_action.py https://raw.githubusercontent.com/fuyuan19890120-cyber/ai-capital-ashare/main/r3_github_action.py
+          mkdir -p data
+          curl -L -o data/qmt_qfq.db https://raw.githubusercontent.com/fuyuan19890120-cyber/ai-capital-ashare/main/data/qmt_qfq.db
+          ls -lh r3_github_action.py data/qmt_qfq.db
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
