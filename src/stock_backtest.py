@@ -65,9 +65,9 @@ def run_stock_backtest(
     if df_open is not None:
         df_open = df_open.sort_index().reindex(df_close.index)
 
-    bond_etf = 'sh511010'
-    gold_etf = 'sh518880'
-    cash_etf = 'sh511880'
+    bond_etf = '511010.SH'
+    gold_etf = '518880.SH'
+    cash_etf = '511880.SH'
 
     # Ensure stock data is sorted
     for code in stock_data:
@@ -323,12 +323,17 @@ def run_stock_backtest(
 
             # === Stock Selection (during RISKON/NEUTRAL/RISKOFF) ===
             selected_stocks = []
-            if eq_w > 0 and stock_data:
+            if eq_w > 0 and (stock_data or select_fn is not None):
                 if select_fn is not None:
                     try:
-                        selected_stocks = select_fn(date, regime)
+                        raw = select_fn(date, regime)
                     except TypeError:
-                        selected_stocks = select_fn(date)  # legacy select_fn(date)
+                        raw = select_fn(date)  # legacy select_fn(date)
+                    # 支持 [(code, weight)] 元组格式 (ETF策略)
+                    if raw and isinstance(raw[0], tuple):
+                        selected_stocks = [c for c, _ in raw]
+                    else:
+                        selected_stocks = raw
                 else:
                     # Filter ST stocks
                     valid_stocks = {}
