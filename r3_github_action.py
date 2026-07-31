@@ -8,7 +8,7 @@ import sqlite3, json, os, sys, requests
 import pandas as pd, numpy as np
 from datetime import datetime
 
-DB = "data/qmt_qfq.db"  # repo root
+DB = 'data/etf_compact.db'
 WEBHOOK = os.environ.get("FEISHU_WEBHOOK", "")
 SECTOR_PCT = 50; MAX_WINDOW = 50; VL = 0.15; VH = 0.40; MW = 15; AMIHUD_W = 0.15
 
