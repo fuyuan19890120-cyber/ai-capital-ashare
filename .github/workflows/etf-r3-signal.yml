@@ -7,16 +7,11 @@ jobs:
   generate-and-notify:
     runs-on: ubuntu-latest
     steps:
-      - name: Download files
-        run: |
-          curl -fsSL -o r3_github_action.py https://raw.githubusercontent.com/fuyuan19890120-cyber/ai-capital-ashare/main/r3_github_action.py
-          mkdir -p data
-          curl -fsSL -o data/etf_compact.db https://raw.githubusercontent.com/fuyuan19890120-cyber/ai-capital-ashare/main/data/etf_compact.db
-          ls -lh r3_github_action.py data/etf_compact.db
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install pandas numpy requests
+      - run: pip install pandas numpy requests akshare
       - run: python r3_github_action.py
         env:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
