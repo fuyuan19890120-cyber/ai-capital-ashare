@@ -414,6 +414,13 @@ def make_monthly_select(close_panel, vol_panel, high_panel, low_panel, use_kdj_d
                 result.append((g, (1.0 - SECTOR_PCT) / 2))
             return result
         else:
+            # 极端危机熔断: regime<0.15 → 全防御, 不选股
+            if regime_val < 0.15:
+                defense_ok = [c for c in DEFENSE if c in close_panel.columns]
+                if not defense_ok: defense_ok = ["511010.SH", "511880.SH"]
+                w = 1.0 / len(defense_ok)
+                return [(c, w) for c in defense_ok]
+
             if not use_kdj_defense:
                 defense_ok = [c for c in DEFENSE if c in close_panel.columns]
                 if not defense_ok: defense_ok = ["511010.SH", "511880.SH"]

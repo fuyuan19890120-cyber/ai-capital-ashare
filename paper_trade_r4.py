@@ -257,39 +257,52 @@ def generate_signal():
                 signals.append((g, (1.0 - SECTOR_PCT) / 2, '宽基成长'))
         print(f"\n  进攻模式:")
     else:
-        # 防守模式 (含 KDJ)
-        mode = "防守"
-        kdj = compute_kdj(close_panel, high_panel, low_panel, today)
-        kdj_codes = [c for c in kdj if kdj[c]["kdj_ent"] and c in SECTOR_ETFS]
-
-        if len(kdj_codes) >= 2:
-            n = min(len(kdj_codes), 4); w = 1.0 / n
-            for c in kdj_codes[:n]: signals.append((c, w, 'KDJ选股'))
-            print(f"\n  防守模式 (KDJ选股, {n}只):")
-        elif len(kdj_codes) == 1:
-            for c, _ in ranked:
-                if c not in kdj_codes and c in SECTOR_ETFS:
-                    kdj_codes.append(c)
-                    if len(kdj_codes) >= 4: break
-            n = len(kdj_codes); w = 1.0 / max(n, 1)
-            for c in kdj_codes[:4]: signals.append((c, w, 'KDJ+Amihud'))
-            print(f"\n  防守模式 (KDJ+Amihud):")
-        else:
-            if r_val >= 0.40: floor = 0.30
-            elif r_val >= 0.30: floor = 0.20
-            elif r_val >= 0.15: floor = 0.10
-            else: floor = 0.0
-
-            if floor > 0:
-                broad_ok = [c for c in BROAD if c in close_panel.columns]
-                if len(broad_ok) >= 2:
-                    signals.append((broad_ok[0], floor/2, '宽基底仓'))
-                    signals.append((broad_ok[1], floor/2, '宽基底仓'))
+        # 极端危机熔断: regime<0.15 → 全防御
+        if r_val < 0.15:
+            mode = "极端防御"
             defense_ok = [c for c in DEFENSE if c in close_panel.columns]
-            remain = 1.0 - floor
-            for d in defense_ok[:3]:
-                signals.append((d, remain/len(defense_ok), '防御'))
-            print(f"\n  防守模式 (分级底仓, floor={floor:.0%}):")
+            if len(defense_ok) < 2: defense_ok = DEFENSE
+            w = 1.0 / len(defense_ok)
+            for d in defense_ok: signals.append((d, w, '全防御'))
+            print(f"\n  极端防御 (regime={r_val:.3f}<0.15):")
+            for code, w, label in signals:
+                print(f"    {code} ({label}): {w*100:.0f}%")
+            # 跳过后续KDJ选股逻辑
+            # (用signals已有内容直接跳到输出)
+        else:
+            # 防守模式 (含 KDJ)
+            mode = "防守"
+            kdj = compute_kdj(close_panel, high_panel, low_panel, today)
+            kdj_codes = [c for c in kdj if kdj[c]["kdj_ent"] and c in SECTOR_ETFS]
+
+            if len(kdj_codes) >= 2:
+                n = min(len(kdj_codes), 4); w = 1.0 / n
+                for c in kdj_codes[:n]: signals.append((c, w, 'KDJ选股'))
+                print(f"\n  防守模式 (KDJ选股, {n}只):")
+            elif len(kdj_codes) == 1:
+                for c, _ in ranked:
+                    if c not in kdj_codes and c in SECTOR_ETFS:
+                        kdj_codes.append(c)
+                        if len(kdj_codes) >= 4: break
+                n = len(kdj_codes); w = 1.0 / max(n, 1)
+                for c in kdj_codes[:4]: signals.append((c, w, 'KDJ+Amihud'))
+                print(f"\n  防守模式 (KDJ+Amihud):")
+            else:
+                if r_val >= 0.40: floor = 0.30
+                elif r_val >= 0.30: floor = 0.20
+                elif r_val >= 0.15: floor = 0.10
+                else: floor = 0.0
+
+                if floor > 0:
+                    broad_ok = [c for c in BROAD if c in close_panel.columns]
+                    if len(broad_ok) >= 2:
+                        signals.append((broad_ok[0], floor/2, '宽基底仓'))
+                        signals.append((broad_ok[1], floor/2, '宽基底仓'))
+                defense_ok = [c for c in DEFENSE if c in close_panel.columns]
+                remain = 1.0 - floor
+                for d in defense_ok[:3]:
+                    signals.append((d, remain/len(defense_ok), '防御'))
+                print(f"\n  防守模式 (分级底仓, floor={floor:.0%}):")
 
     for code, w, label in signals:
         print(f"    {code} ({label}): {w*100:.0f}%")
