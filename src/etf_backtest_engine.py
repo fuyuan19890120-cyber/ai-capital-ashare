@@ -256,8 +256,8 @@ def run_etf_backtest(
                         surge_events[-1]["end_value"] = pv
                         surge_events[-1]["pnl_pct"] = (pv - surge_events[-1]["start_value"]) / surge_events[-1]["start_value"] * 100
 
-            # B. 其他每日信号 (KDJ 出场等)
-            if daily_signals:
+            # B. 其他每日信号 (KDJ 出场等) — SURGE锁仓期间屏蔽
+            if daily_signals and not (surge_enabled and surge_state.get("active")):
                 for sig_name, sig_fn in daily_signals.items():
                     if sig_name == "surge":
                         continue

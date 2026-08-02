@@ -657,8 +657,8 @@ if __name__ == "__main__":
     out_dir = os.path.join(os.path.dirname(__file__), "backtests")
     os.makedirs(out_dir, exist_ok=True)
     vals = pd.DataFrame({
-        "R3_baseline": r3["values"]["value"],
-        "R4_full": r4e["values"]["value"],
+        "(C)R3真实": r3c["values"]["value"],
+        "(D)R4每日": r4d["values"]["value"],
     })
     vals.to_csv(os.path.join(out_dir, "etf_r4_comparison.csv"))
     print(f"\n💾 净值对比: backtests/etf_r4_comparison.csv")

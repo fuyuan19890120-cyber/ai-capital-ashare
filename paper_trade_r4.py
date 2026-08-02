@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """
-ETF-R4 纸面实盘信号生成器 (2026-08-02 修订2)
+ETF-R4 纸面实盘信号生成器 (2026-08-02 修订3·审查修复)
 
-R4 修订 (基于归因分析):
-  - 保留月末 SURGE: MomR²+Amihud × 全量行业池 × Top-2 50/50 (+5.5pp)
-  - 保留 KDJ 防守选股: 防守期用 KDJ 信号挑最佳 ETF (+11pp)
-  - SURGE 三参数: lock=14d / 8%熔断 / MomR²+Amihud选股
-  - 不做每日 SURGE (-2.2pp), 不做 KDJ 中途出场
+R4 策略 (回测验证):
+  - 月末 SURGE: breadth≥2/3且r≥0.30 → MomR²+Amihud全量行业池Top-2各50%, lock=14d, 8%熔断
+  - KDJ 防守选股: 防守期(0.15≤r<0.50)用KDJ信号挑行业ETF, 三阶段递补
+  - CRISIS熔断: r<0.15 → 国债+黄金+货币等权
+  - 不做每日SURGE, 不做KDJ中途出场
 
-策略: Regime切换 × 自适应MomR²(85%)+Amihud(15%) × 月末SURGE × KDJ防守
-回测: 2016-2026, 年化29.2%, 夏普1.00, 最大回撤-34.9% (src/etf_backtest_engine.py)
+信号生成器行为: 每日运行, 检查SURGE触发+输出月度调仓信号
+注意: 当前版本始终输出月度信号(is_month_end=True), 实盘部署前需改为仅月末输出
+
+策略: Regime(tanh×10) × MomR²(85%)+Amihud(15%) × 月末SURGE(r≥0.30) × KDJ防守
+回测: 2016-2026, 年化34.4%, 夏普1.21, 回撤-35.3% (src/etf_backtest_engine.py)
 """
 import os, sys, warnings; warnings.filterwarnings('ignore')
 import pandas as pd, numpy as np, json, sqlite3
@@ -80,8 +83,8 @@ def compute_factors(close_panel, vol_panel, date):
         idx_c = close_panel["510300.SH"]
         rets = idx_c.pct_change().dropna()
         mkt_vol = 0.20
-        if idx_loc < len(rets) and idx_loc >= 60:
-            mkt_vol = rets.rolling(60).std().iloc[idx_loc] * np.sqrt(252)
+        if idx_loc - 1 < len(rets) and idx_loc >= 61:
+            mkt_vol = rets.rolling(60).std().iloc[idx_loc - 1] * np.sqrt(252)
         if np.isnan(mkt_vol): mkt_vol = 0.20
         w = int(np.clip(MAX_WINDOW - (mkt_vol - VL) / (VH - VL) * (MAX_WINDOW - MW), MW, MAX_WINDOW))
     else:
