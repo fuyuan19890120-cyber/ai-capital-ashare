@@ -10,8 +10,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install pandas numpy requests akshare
-      - run: curl -fsSL -o run.py https://raw.githubusercontent.com/fuyuan19890120-cyber/ai-capital-ashare/main/r3_signal.py
-      - run: python run.py
+      - run: |
+          curl -fsSL -o run.py https://raw.githubusercontent.com/fuyuan19890120-cyber/ai-capital-ashare/main/r3_signal.py
+          python run.py
         env:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
