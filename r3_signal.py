@@ -115,6 +115,11 @@ bc = sum(br.values())
 surge = bc >= 2 and r >= 0.15
 print(f"SURGE: {'🚀' if surge else '否'} ({bc}/3)")
 
+
+print()
+print('Top10 Mom×R²:')
+for i,(code,score) in enumerate(ranked[:10]):
+    print(f'  {i+1}. {code} {ETF.get(code,"?")} {score:.4f}')
 signals = []
 if r >= 0.50 or surge:
     if surge:
