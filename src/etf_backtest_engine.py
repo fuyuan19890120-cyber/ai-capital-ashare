@@ -264,14 +264,10 @@ def run_etf_backtest(
                     actions = sig_fn(date, positions, day_context)
                     if actions:
                         signal_log.append({"date": date, "signal": sig_name, "actions": actions})
+                        # 所有出场信号统一挂起, T+1开盘执行 (避免前视偏差)
                         for code, action in actions.items():
                             if action in (0, 'exit', 0.0) and code in positions:
-                                px = get_price(code, date, use_open=True)
-                                if px is not None:
-                                    execute_sell(code, positions[code], px, date)
-                                    del positions[code]
-                                else:
-                                    pending_exits.add(code)
+                                pending_exits.add(code)
 
         # ═══ 收盘估值 ═══
         portfolio_value = mark_to_market(date)

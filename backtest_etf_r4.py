@@ -63,6 +63,7 @@ ALL_ETFS = BROAD + DEFENSE + SECTOR_ETFS
 # 数据加载
 # ═══════════════════════════════════════════════
 def load_qmt_data():
+    """从 QMT 前复权数据库加载 ETF 数据, 过滤未上市填充数据"""
     con = sqlite3.connect(DB_PATH)
     placeholders = ','.join(['?'] * len(ALL_ETFS))
     df = pd.read_sql_query(
@@ -71,6 +72,23 @@ def load_qmt_data():
         con, params=ALL_ETFS)
     con.close()
     df['date'] = pd.to_datetime(df['date'])
+
+    # 过滤未上市填充数据: volume=0 表示 ETF 尚未上市
+    # QMT 数据库对所有 ETF 从 2015-01-05 填充了常量价格(open=close=const, volume=0)
+    # 检测: 找到每只 ETF 第一个 volume>0 的日期, 丢弃之前的数据
+    first_real = df[df['volume'] > 0].groupby('code')['date'].min()
+    mask = pd.Series(False, index=df.index)
+    for code in first_real.index:
+        mask |= (df['code'] == code) & (df['date'] >= first_real[code])
+    df = df[mask].copy()
+
+    # 日志: 报告各 ETF 实际可用数据范围
+    n_before = len(set(ALL_ETFS))
+    n_after = df['code'].nunique()
+    if n_after < n_before:
+        missing = set(ALL_ETFS) - set(df['code'].unique())
+        print(f"  ⚠️ {n_before - n_after} ETFs 无真实数据: {missing}")
+
     return df
 
 
@@ -198,8 +216,10 @@ def compute_momr2(close_panel, date, adaptive=False):
         idx_c = close_panel["510300.SH"]
         rets = idx_c.pct_change().dropna()
         mkt_vol = 0.20
-        if idx_loc < len(rets) and idx_loc >= 60:
-            mkt_vol = rets.rolling(60).std().iloc[idx_loc] * np.sqrt(252)
+        # idx_loc 对应 close_panel 位置, rets[idx_loc] 是 date→date+1 的收益(前视)
+        # 正确做法: rets[idx_loc-1] 是 date-1→date 的收益(已知)
+        if idx_loc - 1 < len(rets) and idx_loc >= 61:
+            mkt_vol = rets.rolling(60).std().iloc[idx_loc - 1] * np.sqrt(252)
         if np.isnan(mkt_vol): mkt_vol = 0.20
         w = int(np.clip(MOMR2_MAX_WIN - (mkt_vol - MOMR2_VL) / (MOMR2_VH - MOMR2_VL) * (MOMR2_MAX_WIN - MOMR2_MID_WIN),
                         MOMR2_MID_WIN, MOMR2_MAX_WIN))
@@ -401,8 +421,7 @@ def make_monthly_select(close_panel, vol_panel, high_panel, low_panel, use_kdj_d
                 return [(c, w) for c in defense_ok]
 
             kdj = compute_kdj(close_panel, high_panel, low_panel, date)
-            kdj_codes = [c for c in kdj if kdj[c]["kdj_ent"] and
-                        c in SECTOR_ETFS + ["159915.SZ", "588000.SH", "510300.SH", "510500.SH"]]
+            kdj_codes = [c for c in kdj if kdj[c]["kdj_ent"] and c in SECTOR_ETFS]
 
             if len(kdj_codes) >= 2:
                 n = min(len(kdj_codes), 4); w = 1.0 / n
@@ -503,73 +522,101 @@ if __name__ == "__main__":
     base_ctx = {"close_panel": close_panel, "open_panel": open_panel,
                 "high_panel": high_panel, "low_panel": low_panel, "vol_panel": vol_panel}
 
-    results = {}
+    # 报告 ETF 数据覆盖
+    etf_coverage = {}
+    for code in close_panel.columns:
+        valid = close_panel[code].dropna()
+        etf_coverage[code] = (valid.index[0], valid.index[-1], len(valid))
+    print(f"\n  ETF 数据覆盖 (过滤未上市填充后):")
+    early = sum(1 for c in etf_coverage if etf_coverage[c][0].year <= 2016)
+    mid = sum(1 for c in etf_coverage if 2017 <= etf_coverage[c][0].year <= 2019)
+    late = sum(1 for c in etf_coverage if etf_coverage[c][0].year >= 2020)
+    print(f"    2016前上市: {early}只, 2017-19上市: {mid}只, 2020后上市: {late}只")
 
-    # ═══ (A) R3 baseline ═══
-    print("\n>>> (A) R3 baseline (2f×10, no daily signals, no KDJ exit)...")
+    results = {}
+    surge_cfg_monthly = {"enabled": True, "mode": "monthly", "lock_days": SURGE_LOCK_DAYS, "dd_melt": SURGE_DD_MELT}
+    surge_cfg_daily = {"enabled": True, "mode": "daily", "lock_days": SURGE_LOCK_DAYS, "dd_melt": SURGE_DD_MELT}
+
+    # ═══ IS/OOS 切分 ═══
+    IS_START, IS_END = "2016-01-01", "2020-12-31"
+    OOS_START, OOS_END = "2021-01-01", "2026-07-31"
+
+    # ═══ (A) R3 baseline: 无SURGE, 等权防御 ═══
+    print("\n>>> (A) R3 baseline (无SURGE, 等权防御)...")
     r3 = run_etf_backtest(
         df_close=close_panel, df_open=open_panel,
         regime_series=regime_2f_10x,
         monthly_select_fn=monthly_sel_no_kdj,
-        daily_signals=None,
-        surge_config={"enabled": False},  # R3: 无 SURGE
+        daily_signals=None, surge_config={"enabled": False},
         start_date=START_DATE, end_date=END_DATE,
         verbose=False, context=base_ctx,
     )
-    results['R3_baseline'] = compute_metrics(r3, "(A) R3 baseline (2f×10)")
+    results['(A)R3等权'] = compute_metrics(r3, "(A) R3 baseline (无SURGE,等权防)")
 
-    # ═══ (B) R4a: SURGE daily ═══
-    print("\n>>> (B) R4a: +SURGE daily...")
-    surge_cfg = {"enabled": True, "lock_days": SURGE_LOCK_DAYS, "dd_melt": SURGE_DD_MELT}
-    r4a = run_etf_backtest(
+    # ═══ (B) R3 + KDJ防守 ═══
+    print("\n>>> (B) +KDJ防守...")
+    r3b = run_etf_backtest(
         df_close=close_panel, df_open=open_panel,
         regime_series=regime_2f_10x,
-        monthly_select_fn=monthly_sel_no_kdj,
+        monthly_select_fn=monthly_sel,
+        daily_signals=None, surge_config={"enabled": False},
+        start_date=START_DATE, end_date=END_DATE,
+        verbose=False, context=base_ctx,
+    )
+    results['(B)+KDJ防'] = compute_metrics(r3b, "(B) +KDJ防守")
+
+    # ═══ (C) R3 真实: 月末SURGE + KDJ防守 ═══
+    print("\n>>> (C) R3真实 (月末SURGE + KDJ防)...")
+    r3c = run_etf_backtest(
+        df_close=close_panel, df_open=open_panel,
+        regime_series=regime_2f_10x,
+        monthly_select_fn=monthly_sel,
         daily_signals={"surge": surge_fn},
-        surge_config=surge_cfg,
+        surge_config=surge_cfg_monthly,
         start_date=START_DATE, end_date=END_DATE,
         verbose=False, context=base_ctx,
     )
-    results['R4a_SURGE'] = compute_metrics(r4a, "(B) R4a +SURGE daily")
+    results['(C)R3真实'] = compute_metrics(r3c, "(C) R3真实 (月末SURGE+KDJ防)")
 
-    # ═══ (C) R4b: +KDJ exit ═══
-    print("\n>>> (C) R4b: +KDJ mid-month exit...")
-    r4b = run_etf_backtest(
+    # ═══ (D) R4 每日SURGE (已证伪, 对照组) ═══
+    print("\n>>> (D) R4每日SURGE (对照组)...")
+    r4d = run_etf_backtest(
         df_close=close_panel, df_open=open_panel,
         regime_series=regime_2f_10x,
         monthly_select_fn=monthly_sel,
-        daily_signals={"surge": surge_fn, "kdj_exit": kdj_exit_fn},
-        surge_config=surge_cfg,
+        daily_signals={"surge": surge_fn},
+        surge_config=surge_cfg_daily,
         start_date=START_DATE, end_date=END_DATE,
         verbose=False, context=base_ctx,
     )
-    results['R4b_KDJ'] = compute_metrics(r4b, "(C) R4b +KDJ exit")
+    results['(D)R4每日'] = compute_metrics(r4d, "(D) R4每日SURGE (证伪)")
 
-    # ═══ (D) R4c: 8f regime ═══
-    print("\n>>> (D) R4c: 8-factor regime...")
-    r4c = run_etf_backtest(
+    # ═══ IS/OOS 验证 (对最佳变体C) ═══
+    print(f"\n>>> IS/OOS 验证: IS={IS_START}~{IS_END}, OOS={OOS_START}~{OOS_END}")
+    r_is = run_etf_backtest(
         df_close=close_panel, df_open=open_panel,
-        regime_series=regime_8f,
+        regime_series=regime_2f_10x,
         monthly_select_fn=monthly_sel,
-        daily_signals={"surge": surge_fn, "kdj_exit": kdj_exit_fn},
-        surge_config=surge_cfg,
-        start_date=START_DATE, end_date=END_DATE,
+        daily_signals={"surge": surge_fn},
+        surge_config=surge_cfg_monthly,
+        start_date=IS_START, end_date=IS_END,
         verbose=False, context=base_ctx,
     )
-    results['R4c_8factor'] = compute_metrics(r4c, "(D) R4c 8f regime")
-
-    # ═══ (E) R4 full: 2f×5 ═══
-    print("\n>>> (E) R4 full: 2f×5 + SURGE + KDJ...")
-    r4e = run_etf_backtest(
+    r_oos = run_etf_backtest(
         df_close=close_panel, df_open=open_panel,
-        regime_series=regime_2f_5x,
+        regime_series=regime_2f_10x,
         monthly_select_fn=monthly_sel,
-        daily_signals={"surge": surge_fn, "kdj_exit": kdj_exit_fn},
-        surge_config=surge_cfg,
-        start_date=START_DATE, end_date=END_DATE,
+        daily_signals={"surge": surge_fn},
+        surge_config=surge_cfg_monthly,
+        start_date=OOS_START, end_date=OOS_END,
         verbose=False, context=base_ctx,
     )
-    results['R4_full'] = compute_metrics(r4e, "(E) R4 full (2f×5)")
+    is_ann = r_is['metrics'].get('annual_return', 0)
+    oos_ann = r_oos['metrics'].get('annual_return', 0)
+    wfe = oos_ann / is_ann if is_ann > 0 else 0
+    results['IS'] = compute_metrics(r_is, f"IS {IS_START}~{IS_END}")
+    results['OOS'] = compute_metrics(r_oos, f"OOS {OOS_START}~{OOS_END}")
+    print(f"\n  📐 WFE = OOS/IS = {oos_ann:.1f}%/{is_ann:.1f}% = {wfe:.2f} {'✅' if wfe > 0.6 else '❌'}")
 
     # ═══ 汇总 ═══
     print(f"\n{'=' * 70}")
@@ -593,7 +640,7 @@ if __name__ == "__main__":
         print(line)
 
     # ── SURGE 事件 ──
-    for name, res in [("R3", r3), ("R4_full", r4e)]:
+    for name, res in [("R3真实", r3c), ("R4每日", r4d)]:
         se = res.get("surge_events", [])
         if se:
             total_pnl = sum(e.get("pnl_pct", 0) or 0 for e in se)

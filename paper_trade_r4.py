@@ -48,7 +48,12 @@ def load_data():
         con, params=ALL_ETFS)
     con.close()
     df['date'] = pd.to_datetime(df['date'])
-    return df
+    # 过滤未上市填充数据 (volume=0)
+    first_real = df[df['volume'] > 0].groupby('code')['date'].min()
+    mask = pd.Series(False, index=df.index)
+    for code in first_real.index:
+        mask |= (df['code'] == code) & (df['date'] >= first_real[code])
+    return df[mask].copy()
 
 
 # ── Regime ──
@@ -85,9 +90,9 @@ def compute_factors(close_panel, vol_panel, date):
     for code in close_panel.columns:
         c = close_panel[code].iloc[:idx_loc+1].dropna()
         if len(c) < w + 1: continue
-        # Mom×R²
+        # Mom×R² (对齐回测: 包含信号日收盘作为最后一个数据点)
         try:
-            recent = c.iloc[-(w+1):-1]
+            recent = c.iloc[-(w+1):]
             y = np.log(recent.values.astype(float)); x = np.arange(len(y))
             if len(y) >= 10:
                 slope, intercept = np.polyfit(x, y, 1)
@@ -255,8 +260,7 @@ def generate_signal():
         # 防守模式 (含 KDJ)
         mode = "防守"
         kdj = compute_kdj(close_panel, high_panel, low_panel, today)
-        kdj_codes = [c for c in kdj if kdj[c]["kdj_ent"] and
-                    c in SECTOR_ETFS + ["159915.SZ", "588000.SH", "510300.SH", "510500.SH"]]
+        kdj_codes = [c for c in kdj if kdj[c]["kdj_ent"] and c in SECTOR_ETFS]
 
         if len(kdj_codes) >= 2:
             n = min(len(kdj_codes), 4); w = 1.0 / n
