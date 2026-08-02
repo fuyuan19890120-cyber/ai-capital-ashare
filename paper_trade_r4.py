@@ -198,7 +198,7 @@ def generate_signal():
 
     # ── SURGE 每日检查 ═─
     breadth_count, surge_detail = detect_surge(close_panel, today)
-    is_surge = breadth_count >= 2 and r_val >= 0.15
+    is_surge = breadth_count >= 2 and r_val >= 0.30
     print(f"  SURGE (每日): {'🚀 触发!' if is_surge else '未触发'} (广度={breadth_count}/3, regime={r_val:.3f})")
     for etf_code, above in surge_detail.items():
         print(f"    {etf_code}: {'✅ SMA50上' if above else '❌ SMA50下'}")

@@ -329,7 +329,7 @@ def make_surge_daily_fn(close_panel, vol_panel):
                     if c.iloc[-1] > sma50.iloc[-1]:
                         breadth += 1
         regime_val = context.get("regime_val", 0.5)
-        if breadth >= 2 and regime_val >= 0.15:
+        if breadth >= 2 and regime_val >= 0.30:
             # 对齐 R3: 全量行业池 × MomR²(85%)+Amihud(15%) Z-score → Top-2, 各50%
             mr2 = compute_momr2(close_panel, date, adaptive=False)
             amihud = compute_amihud(close_panel, vol_panel, date)
