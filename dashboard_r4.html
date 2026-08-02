@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ETF-R4 纸面实盘</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#c9d1d9;--green:#3fb950;--red:#f85149;--blue:#58a6ff;--gold:#d2991d}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:20px;max-width:1200px;margin:0 auto}
+.header{text-align:center;padding:20px 0;border-bottom:1px solid var(--border);margin-bottom:24px}
+.header h1{font-size:24px;color:var(--blue)}
+.header .sub{color:#8b949e;font-size:13px;margin-top:4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px}
+.card h2{font-size:14px;color:#8b949e;margin-bottom:12px;text-transform:uppercase;letter-spacing:1px}
+.metric-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(48,54,61,0.5)}
+.metric-row:last-child{border:none}
+.metric-val{font-size:20px;font-weight:600}
+.metric-label{font-size:13px;color:#8b949e}
+.regime-badge{display:inline-block;padding:4px 12px;border-radius:12px;font-size:13px;font-weight:600}
+.riskon{background:rgba(63,185,80,0.15);color:var(--green)}
+.defense{background:rgba(248,81,73,0.15);color:var(--red)}
+.crisis{background:rgba(139,92,246,0.15);color:#8b5cf6}
+.surge-on{background:rgba(210,153,29,0.15);color:var(--gold)}
+.surge-off{background:rgba(139,148,158,0.15);color:#8b949e}
+.position-bar{height:8px;border-radius:4px;margin:4px 0 8px}
+.ok{color:var(--green)}.warn{color:var(--red)}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--border);font-size:13px}
+th{color:#8b949e}
+.footer{text-align:center;padding:20px;color:#484f58;font-size:11px}
+</style>
+</head>
+<body>
+<div class="header"><h1>ETF-R4 纸面实盘</h1><div class="sub">Regime切换 × MomR²(85%)+Amihud(15%) × 月末SURGE × KDJ防守 × CRISIS熔断 · 43只ETF · 月度调仓</div><div class="sub" id="subtitle"></div></div>
+<div class="grid">
+<div class="card" style="grid-column:span 2"><h2>当前信号 (<span id="sig-date">--</span>)</h2><div style="display:flex;gap:16px;align-items:center;margin-bottom:16px" id="badges"></div><table><tbody id="positions"></tbody></table></div>
+<div class="card"><h2>策略指标</h2><div class="metric-row"><span class="metric-label">回测年化</span><span class="metric-val" style="color:var(--green)">34.4%</span></div><div class="metric-row"><span class="metric-label">回测夏普</span><span class="metric-val" style="color:var(--blue)">1.21</span></div><div class="metric-row"><span class="metric-label">回测回撤</span><span class="metric-val" style="color:var(--red)">-35.3%</span></div><div class="metric-row"><span class="metric-label">WFE (IS/OOS)</span><span class="metric-val" style="color:var(--green)">0.70</span></div><div class="metric-row"><span class="metric-label">IS年化</span><span class="metric-val" style="color:var(--blue)">35.9%</span></div><div class="metric-row"><span class="metric-label">OOS年化</span><span class="metric-val" style="color:var(--blue)">25.2%</span></div></div>
+<div class="card"><h2>SURGE 监测</h2><div class="metric-row"><span class="metric-label">状态</span><span id="surge-status">--</span></div><div class="metric-row"><span class="metric-label">510300(沪深300)</span><span id="br-510300">--</span></div><div class="metric-row"><span class="metric-label">510500(中证500)</span><span id="br-510500">--</span></div><div class="metric-row"><span class="metric-label">159915(创业板)</span><span id="br-159915">--</span></div><div class="metric-row"><span class="metric-label">触发条件</span><span style="font-size:12px;color:#8b949e">≥2站上SMA50 且 Regime≥0.30</span></div></div>
+<div class="card"><h2>纸面实盘</h2><div class="metric-row"><span class="metric-label">状态</span><span class="metric-val" style="color:var(--gold);font-size:14px">第0个月</span></div><div class="metric-row"><span class="metric-label">纸面净值</span><span class="metric-val" id="paper-nav">1.000</span></div><div class="metric-row"><span class="metric-label">纸面收益</span><span class="metric-val" id="paper-pnl" style="color:var(--green)">+0.00%</span></div><div class="metric-row"><span class="metric-label">信号日期</span><span id="paper-date">--</span></div></div>
+<div class="card"><h2>风控护栏</h2><div class="metric-row"><span class="metric-label">连续跑输年</span><span class="ok">0/2</span></div><div class="metric-row"><span class="metric-label">单年最大回撤</span><span class="ok">0% / 35%</span></div><div class="metric-row" style="margin-top:8px;font-size:12px;color:#8b949e">触发任一 → 暂停策略, 人工复审</div></div>
+<div class="card" style="grid-column:span 2"><h2>策略架构 (vs R3)</h2><table><tr><th>层级</th><th>R3</th><th>R4</th></tr>
+<tr><td>Regime</td><td>2因子 tanh×10</td><td>2因子 tanh×10 (不变)</td></tr>
+<tr><td>进攻期</td><td>MomR²(85%)+Amihud(15%)</td><td>不变</td></tr>
+<tr><td>SURGE触发</td><td>breadth≥2/3, r≥0.15</td><td style="color:var(--gold)">breadth≥2/3, r≥0.30</td></tr>
+<tr><td>SURGE锁仓</td><td>14交易日</td><td>14交易日 (不变)</td></tr>
+<tr><td>防守KDJ</td><td>扫行业+宽基</td><td style="color:var(--gold)">仅扫行业ETF</td></tr>
+<tr><td>CRISIS熔断</td><td>无</td><td style="color:var(--gold)">r<0.15 → 全防御(国债+黄金+货币)</td></tr>
+<tr><td>成本</td><td>0.25%/双边</td><td style="color:var(--gold)">0.12%/双边</td></tr>
+</table></div>
+</div>
+<div class="footer">ETF-R4 · 回测2016-2026年化34.4%/夏普1.21 · 双Agent审查通过 · 2026-08-02定稿</div>
+<script>
+/* SIGNAL_DATA_PLACEHOLDER */
+(function(){
+var S={"strategy":"ETF-R4","signal_date":"2026-07-31","regime":0.708,"regime_label":"RISKON","surge":false,"surge_detail":{"breadth_count":0,"breadth":{"510300.SH":false,"510500.SH":false,"159915.SZ":false}},"positions":[{"code":"159992.SZ","weight":0.25,"label":"行业1"},{"code":"512010.SH","weight":0.25,"label":"行业2"},{"code":"159915.SZ","weight":0.25,"label":"创业板"},{"code":"588000.SH","weight":0.25,"label":"科创50"}]};
+var T={"initial_capital":1000000,"current_nav":1000000,"pnl":0,"pnl_pct":0,"positions":[{"code":"159992.SZ","name":"创新药","pnl":0},{"code":"512010.SH","name":"医药","pnl":0},{"code":"159915.SZ","name":"创业板","pnl":0},{"code":"588000.SH","name":"科创50","pnl":0}]};
+var NAMES={"510300.SH":"沪深300","510500.SH":"中证500","159915.SZ":"创业板","588000.SH":"科创50","512010.SH":"医药","159992.SZ":"创新药","511010.SH":"国债","518880.SH":"黄金","511880.SH":"货币"};
+var isR=S.regime_label==='RISKON',isC=S.regime<0.15,G='#3fb950',R='#f85149',B='#58a6ff',GD='#d2991d',V='#8b5cf6';
+document.getElementById('subtitle').textContent='回测:34.4%/1.21/WFE0.70 · 数据:'+S.signal_date;
+document.getElementById('sig-date').textContent=S.signal_date;
+document.getElementById('paper-date').textContent=S.signal_date;
+var badgeCls=isC?'crisis':(isR?'riskon':'defense');
+var badgeLabel=isC?'CRISIS':S.regime_label;
+document.getElementById('badges').innerHTML='<span class="regime-badge '+badgeCls+'">'+badgeLabel+' '+S.regime.toFixed(3)+'</span><span class="regime-badge '+(S.surge?'surge-on':'surge-off')+'">SURGE '+(S.surge?'触发!':'未触发')+'</span>';
+var ph='<tr><th>代码</th><th>名称</th><th>类别</th><th>权重</th><th>分配</th></tr>';
+S.positions.forEach(function(p,i){var w=p.weight*100,nm=NAMES[p.code]||'--';ph+='<tr><td>'+p.code+'</td><td>'+nm+'</td><td>'+p.label+'</td><td>'+w.toFixed(0)+'%</td><td><div class="position-bar" style="width:'+w+'%;background:'+[G,B,GD,V,'#8b949e',R][i%6]+'"></div></td></tr>'});
+document.getElementById('positions').innerHTML=ph;
+document.getElementById('surge-status').innerHTML=S.surge?'<span class="regime-badge surge-on">🚀 已触发('+S.surge_detail.breadth_count+'/3)</span>':'<span class="regime-badge surge-off">未触发('+S.surge_detail.breadth_count+'/3)</span>';
+var bd=S.surge_detail.breadth||{};
+['510300.SH','510500.SH','159915.SZ'].forEach(function(c){var el=document.getElementById('br-'+c.replace('.SH','').replace('.SZ',''));if(el)el.innerHTML=bd[c]?'<span style="color:var(--green)">✅ 站上SMA50</span>':'<span style="color:var(--red)">❌ 低于SMA50</span>'});
+var nv=T.current_nav/T.initial_capital,pl=T.pnl_pct;
+document.getElementById('paper-nav').textContent=nv.toFixed(3);
+document.getElementById('paper-pnl').textContent=(pl>=0?'+':'')+pl.toFixed(2)+'%';
+document.getElementById('paper-pnl').style.color=pl>=0?G:R;
+})();
+</script>
+</body>
+</html>
