@@ -35,3 +35,6 @@ backtests/
 dashboard/.streamlit/secrets.toml
 .claude/
 !data/etf_sector/
+
+# Secrets
+.env
