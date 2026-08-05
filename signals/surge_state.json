@@ -2,12 +2,12 @@
   "active": false,
   "trigger_date": null,
   "expire_date": null,
-  "checked_date": "2026-08-04",
+  "checked_date": "2026-08-05",
   "detail": {
     "breadth_now": 0.0,
     "breadth_prev": 0.0,
-    "s30": 0.609,
-    "base": 0.681
+    "s30": 0.649,
+    "base": 0.717
   },
   "shadow": {
     "active": false,
