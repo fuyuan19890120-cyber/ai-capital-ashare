@@ -3,16 +3,16 @@
 ETF-R4 纸面实盘信号生成器 (2026-08-02 修订3·审查修复)
 
 R4 策略 (回测验证):
-  - 月末 SURGE: breadth≥2/3且r≥0.30 → MomR²+Amihud全量行业池Top-2各50%, lock=14d, 8%熔断
+  - 月末 SURGE: breadth≥2/3且r≥0.30 → MomR²+Amihud全量行业池Top-2各50%
   - KDJ 防守选股: 防守期(0.15≤r<0.50)用KDJ信号挑行业ETF, 三阶段递补
   - CRISIS熔断: r<0.15 → 国债+黄金+货币等权
   - 不做每日SURGE, 不做KDJ中途出场
 
-信号生成器行为: 每日运行, 检查SURGE触发+输出月度调仓信号
-注意: 当前版本始终输出月度信号(is_month_end=True), 实盘部署前需改为仅月末输出
+信号生成器行为: 由 run_monthly_r4.py 在「月末最后一个交易日」调用
+注意: 本脚本不判断月末, 月末判断在 run_monthly_r4.py 的 is_last_trading_day()
 
-策略: Regime(tanh×10) × MomR²(85%)+Amihud(15%) × 月末SURGE(r≥0.30) × KDJ防守
-回测: 2016-2026, 年化34.4%, 夏普1.21, 回撤-35.3% (src/etf_backtest_engine.py)
+策略: Regime(tanh×10) × MomR²(70%)+Amihud(30%) × 月末SURGE(r≥0.30) × KDJ防守
+回测: 2016-2026, 年化35.1%, 夏普1.22, 回撤-35.4% (src/etf_backtest_engine.py)
 """
 import os, sys, warnings; warnings.filterwarnings('ignore')
 import pandas as pd, numpy as np, json, sqlite3
@@ -21,8 +21,11 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 DB = os.path.expanduser("~/ai-capital-ashare/data/qmt_qfq.db")
-SECTOR_PCT = 0.50; MAX_WINDOW = 50; VL = 0.15; VH = 0.40; MW = 15; AMIHUD_W = 0.15
+SECTOR_PCT = 0.50; MAX_WINDOW = 50; VL = 0.15; VH = 0.40; MW = 15; AMIHUD_W = 0.30  # 2026-08-06: 70/30
 TANH_MULT = 10.0  # R4: 保持10 (R3验证值, tanh×5过度防守已证伪)
+# 注: 回测有「锁仓14天 + 8%回撤熔断」机制, 实盘用 if/elif(is_surge优先)天然实现锁仓:
+#   SURGE触发则Top-2持有到下个月末(月末间隔~21天>14天), 不被regime覆盖。
+#   8%熔断需每日监控回撤, 而每日SURGE已证伪(daily模式25.6% vs monthly 36.5%), 故实盘未实现熔断。
 SURGE_LOCK_DAYS = 14; SURGE_DD_MELT = 0.08
 
 BROAD = ["510300.SH", "510500.SH", "159915.SZ", "588000.SH"]
