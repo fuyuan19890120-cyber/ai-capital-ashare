@@ -21,6 +21,8 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 DB = os.path.expanduser("~/ai-capital-ashare/data/qmt_qfq.db")
+if "--tushare" in sys.argv:
+    DB = os.path.expanduser("~/ai-capital-ashare/data/etf_tushare.db")  # tushare pct_chg 重构前复权
 SECTOR_PCT = 0.50; MAX_WINDOW = 50; VL = 0.15; VH = 0.40; MW = 15; AMIHUD_W = 0.30  # 2026-08-06: 70/30
 TANH_MULT = 10.0  # R4: 保持10 (R3验证值, tanh×5过度防守已证伪)
 # 注: 回测有「锁仓14天 + 8%回撤熔断」机制, 实盘用 if/elif(is_surge优先)天然实现锁仓:
@@ -339,7 +341,8 @@ def generate_signal():
 
     signals_dir = os.path.expanduser("~/ai-capital-ashare/signals")
     os.makedirs(signals_dir, exist_ok=True)
-    signal_path = os.path.join(signals_dir, "etf_r4_paper.json")
+    signal_name = "etf_r4_paper_tushare.json" if "--tushare" in sys.argv else "etf_r4_paper.json"
+    signal_path = os.path.join(signals_dir, signal_name)
     with open(signal_path, 'w') as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
     print(f"\n  信号已保存: {signal_path}")

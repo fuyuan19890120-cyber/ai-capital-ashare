@@ -1,116 +1,94 @@
-# AI Capital A-Share — 量化策略 v4
+# ETF-R4 策略
 
-> SMA250 制度择时 + 广度SMA30锁仓进场 + 四因子精选个股 + 月度调仓
+> Regime 择时 × MomR²+Amihud 行业动量 × 月末 SURGE × KDJ 防守 × CRISIS 熔断
 
-[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
-[![Streamlit](https://img.shields.io/badge/Dashboard-Streamlit-red.svg)](https://streamlit.io/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+43 只 ETF 池，月度调仓。R4 在 R3 基础上完成双 Agent 对抗性审查与 8 项修复。
 
 ---
 
 ## 策略概述
 
-以 **SMA250** 判断 A 股牛熊，**广度SMA30** 提前捕捉趋势反转，**四因子**（低波+价值+质量+动量）从 CSI300+创业板+科创50 的 ~380 只股票中精选 Top-15，月度调仓。
-
 | 指标 | 数值 |
 |------|:---:|
-| 年化收益 | **25.3%** |
-| 最大回撤 | −29.2% |
-| 夏普比率 | **0.94** |
-| 总收益（2015-2026） | **1124%** |
-| 跑赢沪深300年数 | 8/11 |
+| 全时段年化（2016–2026） | **+35.1%** |
+| 夏普比率 | **1.22** |
+| 最大回撤 | −35.4% |
+| 总收益 | +2044% |
+| OOS 年化（2021–2026） | **+30.5%** |
+| DSR / BPO | 1.18 / 2.3% |
+
+权重：**MomR² 70% + Amihud 30%**（2026-08-06 由 85/15 改，IC 分析发现 Amihud 被压制）。
 
 ---
 
-## 快速开始
+## 核心逻辑
+
+### 第一层：Regime 择时（2 因子）
+
+```
+regime = 0.6 × tanh(偏离SMA250 × 10) + 0.4 × (SMA50 > SMA250)
+```
+
+输出 0~1 的连续 regime 值，映射四档状态。
+
+### 第二层：状态切换
+
+| 状态 | 条件 | 持仓 |
+|------|------|------|
+| 🚀 SURGE | 月末：breadth≥2/3 站上 SMA50 且 regime≥0.30 | 全量行业池 Top-2 各 50% |
+| 🟢 进攻 | regime ≥ 0.50 | 行业 Top-2 各 25% + 宽基成长(创业板+科创50)各 25% |
+| 🟡 防守 | 0.15 ≤ regime < 0.50 | KDJ 选股 → Amihud 补位 → 分级底仓 |
+| 🔴 极端防御 | regime < 0.15 | 国债+黄金+货币 等权 |
+
+### 第三层：因子
+
+- **MomR²**：自适应窗口（15~50 天，随市场波动率伸缩）的动量回归斜率 × R²
+- **Amihud**：非流动性代理，20 日均值
+- 两者 Z-score 复合，在行业 ETF 内排名取 Top-2
+
+### 关键机制
+
+- **SURGE 只做月末**（每日监控已证伪：daily 25.6% vs monthly 36.5%）
+- **锁仓**：回测锁 14 天 + 8% 回撤熔断；实盘 `if/elif` 天然锁仓，熔断未实现
+- **成本**：0.06%/边
+
+---
+
+## 文件结构（worktree `etf-r4`）
+
+```
+├── backtest_etf_r4.py          # 回测主入口
+├── paper_trade_r4.py           # 纸面实盘信号生成器
+├── run_monthly_r4.py           # 月末自动运行（含信号去重保护）
+├── notify_feishu_r4.py         # 飞书调仓通知
+├── rebuild_r3.py               # 看板重建
+├── fetch_sector_etfs.py        # 行业 ETF 数据抓取
+├── config.py                   # 全局参数
+└── src/
+    └── etf_backtest_engine.py  # 回测引擎（每日信号总线 + SURGE 锁仓）
+```
+
+---
+
+## 运行方式
 
 ```bash
-git clone https://github.com/fuyuan19890120-cyber/ai-capital-ashare.git
-cd ai-capital-ashare
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+# 月末最后一个交易日由 crontab 触发（每天 14:00 检查）
+python3 run_monthly_r4.py
 
-# 生成月度信号
-python run_monthly.py
-
-# 启动 Dashboard
-streamlit run dashboard/app.py --server.port 8501
+# 手动生成信号
+python3 paper_trade_r4.py
 ```
 
----
-
-## 项目结构
-
-```
-├── run_monthly.py            # ⭐ 月度信号主入口
-├── refresh_data.py           # 数据刷新
-├── config.py                 # 全局参数
-├── dashboard/                # Streamlit 仪表盘
-│   └── app.py
-├── src/
-│   ├── signal_generator.py   # 信号生成引擎
-│   ├── stock_backtest.py     # 个股回测引擎
-│   ├── stock_data.py         # 个股数据+因子计算
-│   ├── factor_monitor.py     # 因子监控 (Quant-Zero)
-│   ├── backtest_engine.py    # ETF回测引擎
-│   ├── regime.py             # 8因子制度检测
-│   ├── obsidian_logger.py    # Obsidian 自动记录
-│   └── return_tracker.py     # 收益追踪
-├── data/stocks/              # 个股CSV缓存
-└── signals/                  # 信号输出
-```
+信号输出：`~/ai-capital-ashare/signals/etf_r4_paper.json`，并推送飞书卡片。
 
 ---
 
-## 策略逻辑
+## 已知偏差（审计记录）
 
-### 第一层：制度检测
-
-| 制度 | 条件 | 权益仓位 |
-|------|:--:|:--:|
-| 🟢 RISKON | SMA250趋势向上 | 95% |
-| 🟡 NEUTRAL | 趋势震荡 | 60% |
-| 🟠 RISKOFF | 趋势走弱 | 30% |
-| 🔴 CRISIS | 暴跌 | 0% |
-
-### 第二层：广度SMA30锁仓
-
-当市场大面积回暖（3只ETF站上SMA50的比例15天内从<33%跳到>67%）且SMA30确认趋势时，强制提前进场，锁定21个交易日。
-
-### 第三层：多因子选股
-
-| 因子 | 权重 | 计算方式 |
-|------|:--:|------|
-| 低波动率 | 30% | 1/波动率(63日) |
-| 价值 | 25% | 1/股价 |
-| 质量 | 20% | 过去一年涨幅 |
-| 动量 | 25% | 6月收益/波动率 |
-
-从 CSI300+创业板+科创50 ≈380只中，四因子打分选出 Top-15，等权配置。
-
----
-
-## 自动化
-
-- **每月28日** launchd 自动运行 `auto_monthly.sh`
-- 数据刷新 → 制度检测 → 选股 → 调仓清单 → 收益追踪 → 因子监控
-- 信号/持仓/收益率自动写入 Obsidian
-
----
-
-## 实盘对接
-
-当前支持：
-- **国金证券 MiniQMT**：10万门槛，Python xtquant SDK
-- **东方财富掘金量化**：专业投资者认证，掘金SDK
-
----
-
-## 致谢
-
-- 策略灵感来自 [kabNath/AI-Capital](https://github.com/kabNath/AI-Capital)
-- 因子监控方法论来自 [marcohwlam/quant-zero](https://github.com/marcohwlam/quant-zero)
-- 数据源：AKShare + Sina
+- **幸存者偏差**：QMT 数据库无退市/清盘 ETF，策略从未持有「失败 ETF」
+- **早期池缩水**：2016 年仅 ~10 只有真实数据，2022 年才达 43 只
+- **影响方向**：向上偏（美化回测），幅度预计 <1pp
 
 ---
 

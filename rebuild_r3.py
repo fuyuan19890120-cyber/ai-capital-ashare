@@ -267,7 +267,7 @@ th{{color:#8b949e}}
 <div class="header">
   <h1>ETF-R4 纸面实盘</h1>
   <div class="sub">Regime择时 x MomR2(70%)+Amihud(30%) x SURGE x KDJ防守 x CRISIS熔断 · 43只ETF · 月度调仓</div>
-  <div class="sub">回测2016-2026: 年化34.7% / 夏普1.21 / WFE0.58 / 回撤-35.4% · OOS年化23.0%</div>
+  <div class="sub">回测2016-2026: 年化35.1% / 夏普1.22 / WFE0.58 / 回撤-35.4% · OOS年化30.5%</div>
 </div>
 <div class="grid">
 
@@ -282,10 +282,10 @@ th{{color:#8b949e}}
 
 <div class="card">
   <h2>策略指标 (70/30)</h2>
-  <div class="metric-row"><span class="metric-label">回测年化</span><span class="metric-val ok">+34.7%</span></div>
-  <div class="metric-row"><span class="metric-label">夏普比率</span><span class="metric-val" style="color:var(--blue)">1.21</span></div>
+  <div class="metric-row"><span class="metric-label">回测年化</span><span class="metric-val ok">+35.1%</span></div>
+  <div class="metric-row"><span class="metric-label">夏普比率</span><span class="metric-val" style="color:var(--blue)">1.22</span></div>
   <div class="metric-row"><span class="metric-label">最大回撤</span><span class="metric-val warn">-35.4%</span></div>
-  <div class="metric-row"><span class="metric-label">OOS年化</span><span class="metric-val" style="color:var(--blue)">+23.0%</span></div>
+  <div class="metric-row"><span class="metric-label">OOS年化</span><span class="metric-val" style="color:var(--blue)">+30.5%</span></div>
   <div class="metric-row"><span class="metric-label">WFE</span><span class="metric-val" style="color:var(--gold)">0.58</span></div>
 </div>
 

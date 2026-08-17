@@ -14,6 +14,7 @@ import pandas as pd
 
 WORKTREE = os.path.dirname(os.path.abspath(__file__))
 SIGNAL_FILE = os.path.expanduser("~/ai-capital-ashare/signals/etf_r4_paper.json")
+TUSHARE_SIGNAL_FILE = os.path.expanduser("~/ai-capital-ashare/signals/etf_r4_paper_tushare.json")
 DASHBOARD = os.path.join(WORKTREE, "dashboard_r4.html")
 DASHBOARD_R3_PATH = os.path.expanduser("~/ai-capital-ashare/.claude/worktrees/backtest-macd-bb-kdj/dashboard_r3.html")
 DB = os.path.expanduser("~/ai-capital-ashare/data/qmt_qfq.db")
@@ -69,18 +70,13 @@ def update_dashboard(signal_path, dashboard_path):
 
     return True
 
-def send_feishu_simple(signal):
-    """简化版飞书发送"""
+def send_feishu_compare(qmt_signal, tushare_signal):
+    """飞书发送: 双数据源(QMT/tushare)结果对比"""
     if not WEBHOOK_URL:
         print("⚠️ 未设置 FEISHU_WEBHOOK")
         return False
 
     import requests
-    r = signal['regime']
-    r_label = signal['regime_label']
-    color = "purple" if r < 0.15 else ("green" if r_label == "RISKON" else "red")
-    surge_text = "🚀 SURGE触发!" if signal.get('surge') else "未触发"
-
     ETF_NAMES = {
         "510300.SH":"沪深300","510500.SH":"中证500","159915.SZ":"创业板","588000.SH":"科创50",
         "511010.SH":"国债","518880.SH":"黄金","511880.SH":"货币",
@@ -90,30 +86,31 @@ def send_feishu_simple(signal):
         "515050.SH":"5G","159819.SZ":"人工智能","562500.SH":"机器人",
         "512400.SH":"有色","512200.SH":"房地产","512980.SH":"传媒","159939.SZ":"信息技术",
     }
-    pos_lines = []
-    for p in signal['positions']:
-        code = p['code']
-        name = ETF_NAMES.get(code, '--')
-        pos_lines.append(f"• {name}({code}) {p['weight']*100:.0f}%")
 
+    def fmt(sig):
+        r = sig['regime']; lbl = sig['regime_label']
+        surge = "🚀SURGE" if sig.get('surge') else "未触发"
+        pos = " / ".join(f"{ETF_NAMES.get(p['code'],'--')}({p['weight']*100:.0f}%)" for p in sig['positions'])
+        return f"regime={r:.3f}({lbl}) {surge} {sig.get('mode','')}\n{pos}"
+
+    color = "green" if qmt_signal['regime'] >= 0.5 else "red"
     content = (
-        f"**Regime: {r:.3f} ({r_label})** | SURGE: {surge_text} | 模式: {signal.get('mode','')}\n"
-        f"---\n**持仓:**\n" + "\n".join(pos_lines) + "\n---\n"
-        f"SURGE广度: {signal['surge_detail']['breadth_count']}/3 (触发条件: ≥2站上SMA50且r≥0.30)\n"
-        f"回测(70/30): 年化34.7% / 夏普1.21 / WFE0.58 / 回撤-35.4%\n"
-        f"OOS(2021-2026): 年化23.0%"
+        f"**ETF-R4 双数据源对比 · {qmt_signal['signal_date']}**\n"
+        f"---\n**QMT**\n{fmt(qmt_signal)}\n"
+        f"---\n**tushare**\n{fmt(tushare_signal)}\n"
+        f"---\n回测: QMT 年化35.1% / tushare 年化30.9% (OOS 30.5% / 34.3%)"
     )
 
     card = {
         "msg_type": "interactive",
         "card": {
             "header": {
-                "title": {"tag": "plain_text", "content": f"ETF-R4 调仓 · {signal['signal_date']}"},
+                "title": {"tag": "plain_text", "content": f"ETF-R4 调仓 · {qmt_signal['signal_date']}"},
                 "template": color
             },
             "elements": [
                 {"tag": "div", "text": {"tag": "lark_md", "content": content}},
-                {"tag": "note", "elements": [{"tag": "plain_text", "content": f"ETF-R4纸面实盘 · {datetime.now().strftime('%Y-%m-%d')} · 仅供参考"}]}
+                {"tag": "note", "elements": [{"tag": "plain_text", "content": f"ETF-R4纸面实盘(双源对比) · {datetime.now().strftime('%Y-%m-%d')} · 仅供参考"}]}
             ]
         }
     }
@@ -144,13 +141,14 @@ if __name__ == "__main__":
 
     print(f"  月末! 最近交易日: {latest_date.date()}")
 
-    # 1. 生成信号
+    # 1. 生成信号 (双数据源: QMT + tushare)
     script = os.path.join(WORKTREE, "paper_trade_r4.py")
-    result = subprocess.run([sys.executable, script], capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"  ❌ 信号生成失败:\n{result.stderr}")
-        sys.exit(1)
-    print(result.stdout.strip()[-200:] if len(result.stdout) > 200 else result.stdout.strip())
+    for label, extra, sigfile in [("QMT", [], SIGNAL_FILE), ("tushare", ["--tushare"], TUSHARE_SIGNAL_FILE)]:
+        result = subprocess.run([sys.executable, script] + extra, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"  ❌ {label} 信号生成失败:\n{result.stderr}")
+            sys.exit(1)
+        print(f"  ✅ {label} 信号 -> {sigfile}")
 
     # 2. 更新看板 (两个路径)
     if os.path.exists(SIGNAL_FILE):
@@ -170,10 +168,12 @@ if __name__ == "__main__":
     else:
         print(f"  ⚠️ 因子更新: {result.stderr[:100]}")
 
-    # 3. 发送飞书
-    if os.path.exists(SIGNAL_FILE):
+    # 3. 发送飞书 (双数据源对比)
+    if os.path.exists(SIGNAL_FILE) and os.path.exists(TUSHARE_SIGNAL_FILE):
         with open(SIGNAL_FILE) as f:
-            signal = json.load(f)
-        send_feishu_simple(signal)
+            qmt_signal = json.load(f)
+        with open(TUSHARE_SIGNAL_FILE) as f:
+            tushare_signal = json.load(f)
+        send_feishu_compare(qmt_signal, tushare_signal)
 
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] ✅ ETF-R4 月末任务完成")

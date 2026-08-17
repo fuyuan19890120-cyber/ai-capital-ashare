@@ -28,14 +28,17 @@ from src.etf_backtest_engine import run_etf_backtest, ETF_COST
 # ═══════════════════════════════════════════════
 # 参数
 # ═══════════════════════════════════════════════
-DB_PATH = os.path.expanduser("~/ai-capital-ashare/data/qmt_qfq.db")
+# 数据源可切换: 默认 QMT(原基线), 加 --tushare 用 pct_chg 重构版
+DB_PATH = os.path.expanduser(
+    "~/ai-capital-ashare/data/etf_tushare.db" if "--tushare" in sys.argv else
+    "~/ai-capital-ashare/data/qmt_qfq.db")
 START_DATE = "2016-01-01"
 END_DATE = "2026-07-31"
 INITIAL_CAPITAL = 1_000_000
 COST_RATE = 0.0006
 MOMR2_MAX_WIN = 50; MOMR2_MIN_WIN = 15; MOMR2_MID_WIN = 15
 MOMR2_VL = 0.15; MOMR2_VH = 0.40
-AMIHUD_W = 0.15; MOMR2_W = 0.85
+AMIHUD_W = 0.30; MOMR2_W = 0.70  # 2026-08-06: 因子评估+权重实验验证，OOS +2.6pp
 SECTOR_PCT = 0.50
 
 SURGE_LOCK_DAYS = 14
