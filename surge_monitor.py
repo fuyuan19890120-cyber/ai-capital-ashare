@@ -36,7 +36,7 @@ STATE_PATH = os.path.join(BASE, "signals", "surge_state.json")
 
 # 预注册参数(与回测/实盘口径一致, 勿因单次回测调整)
 LOOKBACK = 15        # 广度回看交易日
-LOCK_DAYS = 21       # 锁定交易日
+LOCK_DAYS = 14       # 锁定交易日(与回测 SURGE_LOCK_DAYS 对齐; 21天会跨月漏掉下次SURGE, 回测-2.9pp)
 S30_MIN = 0.70       # SMA30 制度分阈值
 BASE_MIN = 0.15      # SMA250 制度分底线
 EQ_ETFS = {"sh510300": "510300", "sh510500": "510500", "sz159915": "159915"}
