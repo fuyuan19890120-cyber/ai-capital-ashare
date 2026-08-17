@@ -10,6 +10,10 @@ data/stocks/
 data/etf_*.csv
 data/index_*.csv
 data/fundamentals*.csv
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Keep directory structure
 !data/.gitkeep
