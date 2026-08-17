@@ -98,6 +98,32 @@ def load_state():
     return {"active": False, "trigger_date": None, "expire_date": None}
 
 
+def send_feishu(title, content, template="red"):
+    """飞书卡片推送(SURGE 触发/到期主动提醒)。用标准库 urllib, 无需额外依赖。
+    webhook 从环境变量 FEISHU_WEBHOOK 读取, 未设置则静默跳过。"""
+    webhook = os.environ.get("FEISHU_WEBHOOK", "")
+    if not webhook:
+        return
+    import urllib.request
+    card = {
+        "msg_type": "interactive",
+        "card": {
+            "header": {"title": {"tag": "plain_text", "content": title},
+                       "template": template},
+            "elements": [{"tag": "div", "text": {"tag": "lark_md", "content": content}},
+                         {"tag": "note", "elements": [
+                             {"tag": "plain_text", "content": "SURGE 日频监控自动推送"}]}],
+        },
+    }
+    req = urllib.request.Request(webhook, data=json.dumps(card).encode("utf-8"),
+                                 headers={"Content-Type": "application/json"})
+    try:
+        urllib.request.urlopen(req, timeout=10)
+        print(f"📱 飞书已推送: {title}")
+    except Exception as e:  # noqa: BLE001 - 飞书推送失败不影响信号判断
+        print(f"⚠️ 飞书推送失败: {e}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry", action="store_true")
@@ -121,8 +147,12 @@ def main():
     state = load_state()
     # 到期检查(按指数日历数交易日)
     if state.get("active") and state.get("expire_date") and today >= state["expire_date"]:
+        _trigger_date = state.get("trigger_date")
         state = {"active": False, "trigger_date": None, "expire_date": None}
         print(f"[{today}] 🔓 SURGE 锁定到期, 恢复 SMA250 制度判断")
+        send_feishu("🔓 SURGE 锁定到期",
+                    f"触发 {_trigger_date} 起锁定已到期\n恢复 SMA250 制度判断",
+                    "grey")
 
     if trig and not state.get("active"):
         pos = cal.get_indexer([idx.index[-1]])[0]
@@ -132,6 +162,11 @@ def main():
         state = {"active": True, "trigger_date": today, "expire_date": expire_date}
         print(f"[{today}] 🚨🚨 SURGE 触发! 广度 {b_prev:.0%}→{b_now:.0%}, SMA30分 {s30:.3f}, "
               f"SMA250分 {base:.3f} —— 次日开盘按 RISKON 进场, 锁定至 {expire_date}")
+        send_feishu("🚨 SURGE 触发",
+                    f"广度 {b_prev:.0%}→{b_now:.0%}（≥2/3站上SMA50）\n"
+                    f"SMA30分 {s30:.3f} · SMA250分 {base:.3f}\n"
+                    f"**次日开盘按 RISKON 进场**，锁定至 {expire_date}",
+                    "red")
     elif state.get("active"):
         print(f"[{today}] 🔒 SURGE 锁定中(触发 {state['trigger_date']}, 至 {state['expire_date']}), "
               f"制度强制 RISKON | 广度 {b_now:.0%} s30 {s30:.3f} base {base:.3f}")
