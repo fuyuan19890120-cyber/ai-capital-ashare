@@ -253,14 +253,15 @@ def main():
 
         msg = (f"广度 {b_prev:.0%}→{b_now:.0%}（≥2/3站上SMA50）\n"
                f"SMA30分 {s30:.3f} · SMA250分 {base:.3f}\n"
-               f"**次日开盘按 RISKON 进场**，锁定至 {expire_date}")
+               f"**SURGE 已锁仓**，锁定至 {expire_date}\n"
+               f"月末调仓时若仍在锁仓期 → 按 SURGE 买 Top-2 各50%")
         if top2:
             picks = "\n".join(f"  {i+1}. {name}（{code}）" for i, (code, name) in enumerate(top2))
-            msg += f"\n\n**Top-2 行业 ETF（各50%）:**\n{picks}"
+            msg += f"\n\n**Top-2 行业 ETF 预览（各50%）:**\n{picks}"
         else:
             msg += "\n\n⚠️ 行业 ETF 数据拉取失败，请手动选股"
 
-        send_feishu("🚨 SURGE 触发", msg, "red")
+        send_feishu("🚨 SURGE 触发（月末调仓预览）", msg, "red")
     elif state.get("active"):
         print(f"[{today}] 🔒 SURGE 锁定中(触发 {state['trigger_date']}, 至 {state['expire_date']}), "
               f"制度强制 RISKON | 广度 {b_now:.0%} s30 {s30:.3f} base {base:.3f}")
