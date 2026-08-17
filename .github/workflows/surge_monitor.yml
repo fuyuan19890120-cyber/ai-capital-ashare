@@ -27,6 +27,8 @@ jobs:
 
       - name: Run surge monitor
         id: monitor
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
         run: |
           python surge_monitor.py | tee /tmp/surge_out.txt
           # 触发/锁定状态放进 job summary, 便于手机通知一眼看到
