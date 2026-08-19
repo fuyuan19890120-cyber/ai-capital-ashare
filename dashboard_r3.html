@@ -62,7 +62,7 @@ tbody tr:hover{background:rgba(48,54,61,0.3)}
 <div class="grid">
 
 <div class="card col-8">
-  <h2>当前信号 (<span id="sig-date">--</span>)</h2>
+  <h2>当前持仓 (<span id="sig-date">--</span> 调仓, 持有中)</h2>
   <div style="margin-bottom:14px">
     <span class="badge riskon" id="sig-regime">--</span>
     <span class="badge surge-off" id="sig-surge">--</span>
@@ -96,8 +96,8 @@ tbody tr:hover{background:rgba(48,54,61,0.3)}
 
 <div class="card col-4">
   <h2>纸面实盘 (6/30起)</h2>
-  <div class="metric-row"><span class="metric-label">当前净值</span><span class="metric-val">760,336</span></div>
-  <div class="metric-row"><span class="metric-label">累计收益</span><span class="metric-val warn">-24.0%</span></div>
+  <div class="metric-row"><span class="metric-label">当前净值</span><span class="metric-val">761,059</span></div>
+  <div class="metric-row"><span class="metric-label">累计收益</span><span class="metric-val warn">-23.9%</span></div>
   <div class="metric-row"><span class="metric-label">初始资金</span><span class="metric-val">100万</span></div>
   <div class="note">2026-06-30 起 · 6月期选半导体+信息技术，7月大跌拖累 -26.7%</div>
 </div>
@@ -116,10 +116,10 @@ tbody tr:hover{background:rgba(48,54,61,0.3)}
     <thead><tr><th>调仓日</th><th>持仓</th><th style="text-align:right">期间收益</th></tr></thead>
     <tbody>
       <tr><td>2026-06-30</td><td>信息技术 25% · 半导体 25% · 创业板 25% · 科创50 25%</td><td class="negative" style="text-align:right;font-weight:600">-26.7%</td></tr>
-      <tr><td>2026-07-31</td><td>创新药 25% · 医药 25% · 创业板 25% · 科创50 25%</td><td class="positive" style="text-align:right;font-weight:600">+4.1%</td></tr>
-      <tr><td>2026-08-19</td><td>地产华宝 25% · 医疗 25% · 创业板 25% · 科创50 25%</td><td style="text-align:right;font-weight:600">持有中</td></tr>
+      <tr><td>2026-07-31</td><td>创新药 25% · 医药 25% · 创业板 25% · 科创50 25%</td><td class="positive" style="text-align:right;font-weight:600">+4.1% 持有中</td></tr>
     </tbody>
   </table>
+  <div class="note">下次调仓预览（8月末生效，未生效）：地产华宝 25% · 医疗 25% · 创业板 25% · 科创50 25%</div>
 </div>
 
 </div>
@@ -128,15 +128,15 @@ tbody tr:hover{background:rgba(48,54,61,0.3)}
 <script>
 /* SIGNAL_DATA_PLACEHOLDER */
 var S = {
-  "signal_date": "2026-08-19",
-  "regime": 0.694,
+  "signal_date": "2026-07-31",
+  "regime": 0.756,
   "regime_label": "RISKON",
   "mode": "进攻",
   "surge": false,
   "surge_detail": {"breadth_count": 0, "breadth": {"510300.SH": false, "510500.SH": false, "159915.SZ": false}},
   "positions": [
-    {"code": "159707.SZ", "weight": 0.25, "label": "行业动量"},
-    {"code": "512170.SH", "weight": 0.25, "label": "行业动量"},
+    {"code": "159992.SZ", "weight": 0.25, "label": "行业动量"},
+    {"code": "512010.SH", "weight": 0.25, "label": "行业动量"},
     {"code": "159915.SZ", "weight": 0.25, "label": "宽基成长"},
     {"code": "588000.SH", "weight": 0.25, "label": "宽基成长"}
   ]
