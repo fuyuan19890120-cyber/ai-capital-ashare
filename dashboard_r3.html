@@ -110,6 +110,13 @@ tbody tr:hover{background:rgba(48,54,61,0.3)}
   <div class="note">主信号用tushare(pct_chg重构)，QMT仅交叉参考</div>
 </div>
 
+<div class="card col-4">
+  <h2>QMT 参考信号 (<span id="qmt-date">--</span>)</h2>
+  <div class="metric-row"><span class="metric-label">Regime</span><span class="metric-val blue" id="qmt-regime">--</span></div>
+  <div class="metric-row"><span class="metric-label">与 tushare 对比</span><span class="metric-val" id="qmt-cmp">--</span></div>
+  <div class="note" id="qmt-positions">--<br>（QMT前复权有bug，仅交叉参考）</div>
+</div>
+
 <div class="card col-12">
   <h2>历史调仓 (纸面实盘 6/30 起)</h2>
   <table>
@@ -139,6 +146,19 @@ var S = {
     {"code": "512010.SH", "weight": 0.25, "label": "行业动量"},
     {"code": "159915.SZ", "weight": 0.25, "label": "宽基成长"},
     {"code": "588000.SH", "weight": 0.25, "label": "宽基成长"}
+  ]
+};
+
+/* QMT_SIGNAL_PLACEHOLDER */
+var S_QMT = {
+  "signal_date": "2026-07-31",
+  "regime": 0.716,
+  "regime_label": "RISKON",
+  "positions": [
+    {"code": "159992.SZ", "weight": 0.25},
+    {"code": "512010.SH", "weight": 0.25},
+    {"code": "159915.SZ", "weight": 0.25},
+    {"code": "588000.SH", "weight": 0.25}
   ]
 };
 
@@ -177,6 +197,19 @@ function render() {
   document.getElementById('surge-510300').innerHTML = up510300 ? '<span class="positive">✅ SMA50上</span>' : '<span class="negative">❌ SMA50下</span>';
   document.getElementById('surge-510500').innerHTML = up510500 ? '<span class="positive">✅ SMA50上</span>' : '<span class="negative">❌ SMA50下</span>';
   document.getElementById('surge-159915').innerHTML = up159915 ? '<span class="positive">✅ SMA50上</span>' : '<span class="negative">❌ SMA50下</span>';
+
+  // QMT 参考信号渲染
+  document.getElementById('qmt-date').textContent = S_QMT.signal_date;
+  document.getElementById('qmt-regime').textContent = S_QMT.regime_label + ' ' + S_QMT.regime.toFixed(3);
+  var qmtCodes = S_QMT.positions.map(function(p){return p.code;}).sort().join(',');
+  var mainCodes = S.positions.map(function(p){return p.code;}).sort().join(',');
+  var same = (qmtCodes === mainCodes);
+  var cmpEl = document.getElementById('qmt-cmp');
+  cmpEl.textContent = same ? '✅ 一致' : '⚠️ 分歧';
+  cmpEl.className = 'metric-val ' + (same ? 'ok' : 'warn');
+  document.getElementById('qmt-positions').innerHTML =
+    S_QMT.positions.map(function(p){return (ETF_NAMES[p.code]||p.code)+' '+(p.weight*100).toFixed(0)+'%';}).join(' · ') +
+    '<br>（QMT前复权有bug，仅交叉参考）';
 }
 render();
 </script>
