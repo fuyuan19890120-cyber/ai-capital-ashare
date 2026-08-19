@@ -32,6 +32,8 @@ def run_etf_backtest(
     cost_rate=ETF_COST,
     verbose=True,
     context=None,          # 用户自定义上下文, 传递给所有信号函数
+    warmup_days=0,         # 预热天数(交易日)。因子用闭包完整历史数据计算，
+                           # 引擎层面无需再 warmup。默认0，因子内部 min_periods 已保护。
 ):
     """
     ETF 回测主引擎
@@ -58,15 +60,15 @@ def run_etf_backtest(
     all_dates = df_close.index
     n_days = len(all_dates)
 
-    if n_days < 252:
-        return {"values": pd.DataFrame(), "metrics": {}, "error": "Insufficient data (<252 days)"}
+    if n_days < 20:
+        return {"values": pd.DataFrame(), "metrics": {}, "error": "Insufficient data (<20 days)"}
 
     # ── 调仓日期: 每月最后交易日 ──
     monthly_groups = {}
     for d in all_dates:
         monthly_groups.setdefault((d.year, d.month), []).append(d)
     rebalance_dates = set(max(dates) for dates in monthly_groups.values())
-    warmup_cutoff = all_dates[min(252, len(all_dates) - 1)]
+    warmup_cutoff = all_dates[min(warmup_days, len(all_dates) - 1)]
 
     # ── 状态变量 ──
     cash = float(initial_capital)
@@ -199,7 +201,7 @@ def run_etf_backtest(
                         pending_exits.discard(code)
 
         # ═══ 每日信号检查 ═══
-        if i >= 252 and date >= warmup_cutoff:
+        if i >= warmup_days and date >= warmup_cutoff:
             day_context = {
                 **context,
                 "date": date,
@@ -247,6 +249,7 @@ def run_etf_backtest(
                         surge_events[-1]["end_date"] = date
                         surge_events[-1]["end_value"] = pv
                         surge_events[-1]["pnl_pct"] = (pv - surge_events[-1]["start_value"]) / surge_events[-1]["start_value"] * 100
+                        surge_events[-1]["melted"] = True  # 标记: 8%回撤熔断(仅统计, 回测不调仓)
 
                 # 锁仓期满
                 if surge_state["days_remaining"] <= 0:
@@ -274,7 +277,7 @@ def run_etf_backtest(
         portfolio_values.append({"date": date, "value": portfolio_value})
 
         # ═══ 月末调仓 ═══
-        if date in rebalance_dates and i >= 252 and date >= warmup_cutoff:
+        if date in rebalance_dates and i >= warmup_days and date >= warmup_cutoff:
             rebalance_log.append(date)
 
             if regime_series is not None and date in regime_series.index:

@@ -224,14 +224,20 @@ if __name__ == "__main__":
     else:
         print(f"  ⚠️ 因子更新: {result.stderr[:100]}")
 
-    # 3. 发送飞书 (双源对比, 单源缺失则发单源降级通知)
+    # 3. 发送飞书 (双源对比, 单源缺失或陈旧则发降级通知)
+    # 判断「本月新鲜」而非「文件存在」: 旧文件(上月日期)残留时不会被当现役源
+    this_month = latest_date.strftime("%Y-%m")
     qmt_signal = tushare_signal = None
     if os.path.exists(SIGNAL_FILE):
         with open(SIGNAL_FILE) as f:
-            qmt_signal = json.load(f)
+            _sig = json.load(f)
+        if str(_sig.get("signal_date", "")).startswith(this_month):
+            qmt_signal = _sig
     if os.path.exists(TUSHARE_SIGNAL_FILE):
         with open(TUSHARE_SIGNAL_FILE) as f:
-            tushare_signal = json.load(f)
+            _sig = json.load(f)
+        if str(_sig.get("signal_date", "")).startswith(this_month):
+            tushare_signal = _sig
 
     if qmt_signal and tushare_signal:
         send_feishu_compare(qmt_signal, tushare_signal)
