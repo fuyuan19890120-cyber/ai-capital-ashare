@@ -8,15 +8,15 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px;max-width:1280px;margin:0 auto;line-height:1.5}
 .header{text-align:center;padding:28px 0 20px;border-bottom:1px solid var(--border);margin-bottom:28px}
-.header h1{font-size:28px;color:var(--blue);letter-spacing:1px}
+.header h1{font-size:28px;color:var(--text);letter-spacing:1px}
 .header .tagline{color:var(--muted);font-size:14px;margin-top:8px}
-.header .metrics{display:flex;justify-content:center;gap:24px;margin-top:16px;flex-wrap:wrap}
+.header .metrics{display:flex;justify-content:center;gap:28px;margin-top:18px;flex-wrap:wrap}
 .header .metrics .m{text-align:center}
-.header .metrics .m .v{font-size:22px;font-weight:700}
-.header .metrics .m .k{font-size:12px;color:var(--muted)}
+.header .metrics .m .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.header .metrics .m .k{font-size:12px;color:var(--muted);margin-top:2px}
 .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
-.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px;transition:border-color .15s}
-.card:hover{border-color:#484f58}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px;box-shadow:0 1px 3px rgba(0,0,0,0.2);transition:border-color .15s,box-shadow .15s}
+.card:hover{border-color:#484f58;box-shadow:0 3px 8px rgba(0,0,0,0.3)}
 .card h2{font-size:13px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;letter-spacing:1.5px;font-weight:600}
 .col-8{grid-column:span 8}
 .col-4{grid-column:span 4}
@@ -24,9 +24,9 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .col-12{grid-column:span 12}
 .metric-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid rgba(48,54,61,0.5)}
 .metric-row:last-child{border:none}
-.metric-val{font-size:19px;font-weight:600}
+.metric-val{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
 .metric-label{font-size:13px;color:var(--muted)}
-.badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:600;margin-right:6px}
+.badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:600;margin-right:6px;line-height:1.4}
 .riskon{background:rgba(63,185,80,0.15);color:var(--green)}
 .neutral{background:rgba(210,153,29,0.15);color:var(--gold)}
 .defense{background:rgba(248,81,73,0.15);color:var(--red)}
@@ -37,7 +37,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .positive{color:var(--green)}.negative{color:var(--red)}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--border);font-size:13px}
-th{color:var(--muted);font-weight:500}
+th{color:var(--muted);font-weight:500;background:rgba(48,54,61,0.25)}
 tbody tr:hover{background:rgba(48,54,61,0.3)}
 .pos-table td:last-child{font-weight:600;text-align:right}
 .empty{color:var(--muted);font-size:13px;padding:12px 0}
@@ -55,14 +55,14 @@ tbody tr:hover{background:rgba(48,54,61,0.3)}
     <div class="m"><div class="v blue" id="h-sharpe">1.16</div><div class="k">夏普比率</div></div>
     <div class="m"><div class="v warn" id="h-mdd">-35.3%</div><div class="k">最大回撤</div></div>
     <div class="m"><div class="v blue" id="h-oos">+34.3%</div><div class="k">OOS年化</div></div>
-    <div class="m"><div class="v" style="color:var(--gold)" id="h-wfe">1.25</div><div class="k">WFE</div></div>
+    <div class="m"><div class="v" style="color:var(--blue)" id="h-wfe">1.25</div><div class="k">WFE</div></div>
   </div>
 </div>
 
 <div class="grid">
 
 <div class="card col-8">
-  <h2>当前持仓 (<span id="sig-date">--</span> 调仓, 持有中)</h2>
+  <h2>📊 当前持仓 (<span id="sig-date">--</span> 调仓, 持有中)</h2>
   <div style="margin-bottom:14px">
     <span class="badge riskon" id="sig-regime">--</span>
     <span class="badge surge-off" id="sig-surge">--</span>
@@ -75,18 +75,18 @@ tbody tr:hover{background:rgba(48,54,61,0.3)}
 </div>
 
 <div class="card col-4">
-  <h2>策略指标 (70/30)</h2>
+  <h2>📈 策略指标 (70/30)</h2>
   <div class="metric-row"><span class="metric-label">回测年化</span><span class="metric-val ok">+31.3%</span></div>
   <div class="metric-row"><span class="metric-label">夏普比率</span><span class="metric-val blue">1.16</span></div>
   <div class="metric-row"><span class="metric-label">最大回撤</span><span class="metric-val warn">-35.3%</span></div>
   <div class="metric-row"><span class="metric-label">OOS年化</span><span class="metric-val blue">+34.3%</span></div>
-  <div class="metric-row"><span class="metric-label">WFE</span><span class="metric-val" style="color:var(--gold)">1.25</span></div>
+  <div class="metric-row"><span class="metric-label">WFE</span><span class="metric-val" style="color:var(--blue)">1.25</span></div>
   <div class="metric-row"><span class="metric-label">DSR / BPO</span><span class="metric-val blue">1.41 / 2.7%</span></div>
   <div class="note">tushare pct_chg 修正版 · 真实基线31.3%（48只池含备选边际效应）</div>
 </div>
 
 <div class="card col-4">
-  <h2>SURGE 监测</h2>
+  <h2>🚀 SURGE 监测</h2>
   <div class="metric-row"><span class="metric-label">状态</span><span class="badge surge-off" id="surge-status">--</span></div>
   <div class="metric-row"><span class="metric-label">510300 沪深300</span><span id="surge-510300">--</span></div>
   <div class="metric-row"><span class="metric-label">510500 中证500</span><span id="surge-510500">--</span></div>
@@ -95,7 +95,7 @@ tbody tr:hover{background:rgba(48,54,61,0.3)}
 </div>
 
 <div class="card col-4">
-  <h2>纸面实盘 (6/30起)</h2>
+  <h2>💰 纸面实盘 (6/30起)</h2>
   <div class="metric-row"><span class="metric-label">当前净值</span><span class="metric-val">761,059</span></div>
   <div class="metric-row"><span class="metric-label">累计收益</span><span class="metric-val warn">-23.9%</span></div>
   <div class="metric-row"><span class="metric-label">初始资金</span><span class="metric-val">100万</span></div>
@@ -103,7 +103,7 @@ tbody tr:hover{background:rgba(48,54,61,0.3)}
 </div>
 
 <div class="card col-4">
-  <h2>数据源状态</h2>
+  <h2>🛰️ 数据源状态</h2>
   <div class="metric-row"><span class="metric-label">tushare(主)</span><span class="metric-val ok">✅ 正确</span></div>
   <div class="metric-row"><span class="metric-label">QMT(参考)</span><span class="metric-val warn">⚠️ 前复权有bug</span></div>
   <div class="metric-row"><span class="metric-label">ETF池</span><span class="metric-val blue">48只</span></div>
@@ -111,14 +111,14 @@ tbody tr:hover{background:rgba(48,54,61,0.3)}
 </div>
 
 <div class="card col-4">
-  <h2>QMT 参考信号 (<span id="qmt-date">--</span>)</h2>
+  <h2>🔍 QMT 参考信号 (<span id="qmt-date">--</span>)</h2>
   <div class="metric-row"><span class="metric-label">Regime</span><span class="metric-val blue" id="qmt-regime">--</span></div>
   <div class="metric-row"><span class="metric-label">与 tushare 对比</span><span class="metric-val" id="qmt-cmp">--</span></div>
   <div class="note" id="qmt-positions">--<br>（QMT前复权有bug，仅交叉参考）</div>
 </div>
 
-<div class="card col-12">
-  <h2>历史调仓 (纸面实盘 6/30 起)</h2>
+<div class="card col-8">
+  <h2>📅 历史调仓 (纸面实盘 6/30 起)</h2>
   <table>
     <thead><tr><th>调仓日</th><th>持仓</th><th style="text-align:right">期间收益</th></tr></thead>
     <tbody>
@@ -127,6 +127,18 @@ tbody tr:hover{background:rgba(48,54,61,0.3)}
     </tbody>
   </table>
   <div class="note">下次调仓预览（8月末生效，未生效）：地产华宝 25% · 医疗 25% · 创业板 25% · 科创50 25%</div>
+</div>
+
+<div class="card col-12">
+  <h2>💹 纸面实盘净值曲线 (6/30 起 · 每日)</h2>
+  <svg id="paper-chart" viewBox="0 0 900 195" style="width:100%;height:auto" preserveAspectRatio="none"></svg>
+  <div class="note" id="paper-note">--</div>
+</div>
+
+<div class="card col-12">
+  <h2>📈 回测净值走势 + Regime 色带 (2016-2026)</h2>
+  <svg id="nav-chart" viewBox="0 0 600 200" style="width:100%;height:auto" preserveAspectRatio="none"></svg>
+  <div class="note">2016-2026 回测净值（log刻度）· 100万 → 1750万（+1650%）· 底部色带=Regime（🟢进攻 🔴防守 🟣危机）· tushare修正版</div>
 </div>
 
 </div>
@@ -211,7 +223,136 @@ function render() {
     S_QMT.positions.map(function(p){return (ETF_NAMES[p.code]||p.code)+' '+(p.weight*100).toFixed(0)+'%';}).join(' · ') +
     '<br>（QMT前复权有bug，仅交叉参考）';
 }
+
+// 回测净值(月度半年采样, 净值单位=百万) + Regime 历史
+var NAV_DATA = [
+  {"v":1.0},{"v":1.08},{"v":1.03},{"v":1.17},{"v":1.44},{"v":1.42},{"v":1.47},{"v":1.46},
+  {"v":2.07},{"v":2.71},{"v":3.18},{"v":4.03},{"v":4.55},{"v":4.65},{"v":4.79},{"v":5.8},
+  {"v":5.38},{"v":5.81},{"v":7.2},{"v":8.02},{"v":13.55},{"v":17.5}
+];
+var REGIME_DATA = [
+  {"r":0.005},{"r":0.22},{"r":0.851},{"r":0.936},{"r":0.968},{"r":0.095},{"r":0.095},{"r":0.948},
+  {"r":0.856},{"r":0.988},{"r":0.989},{"r":0.601},{"r":0.084},{"r":0.1},{"r":0.352},{"r":0.387},
+  {"r":0.036},{"r":0.259},{"r":0.884},{"r":0.915},{"r":0.957},{"r":0.715}
+];
+
+function drawNavChart() {
+  var W = 600, H = 200;
+  var ml = 44, mr = 12, mt = 28, mb = 26;
+  var pw = W - ml - mr, ph = H - mt - mb - 22;  // 底部留 22px 给 regime 色带
+  var maxL = Math.log(17.5);
+  var svg = '';
+
+  // y 轴净值刻度 (log 刻度)
+  [1, 2, 5, 10, 17.5].forEach(function(v) {
+    var y = mt + ph - (Math.log(v) / maxL) * ph;
+    svg += '<line x1="'+ml+'" y1="'+y.toFixed(1)+'" x2="'+W+'" y2="'+y.toFixed(1)+'" stroke="#30363d" stroke-width="0.5"/>';
+    svg += '<text x="'+(ml-6)+'" y="'+(y+4).toFixed(1)+'" fill="#8b949e" font-size="10" text-anchor="end">'+v+'×</text>';
+  });
+
+  // x 轴年份刻度
+  var years = {0:'2016', 2:'2017', 4:'2018', 6:'2019', 8:'2020', 10:'2021', 12:'2022', 14:'2023', 16:'2024', 18:'2025', 20:'2026'};
+  Object.keys(years).forEach(function(i) {
+    var x = ml + parseInt(i) * pw / (NAV_DATA.length - 1);
+    svg += '<text x="'+x.toFixed(1)+'" y="'+(H-8)+'" fill="#8b949e" font-size="10" text-anchor="middle">'+years[i]+'</text>';
+  });
+
+  // 折线
+  var pts = NAV_DATA.map(function(p, i) {
+    var x = ml + i * pw / (NAV_DATA.length - 1);
+    var y = mt + ph - (Math.log(p.v) / maxL) * ph;
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  });
+  svg += '<polyline points="'+pts.join(' ')+'" fill="none" stroke="#3fb950" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+
+  // 末端点 + 标注
+  var last = NAV_DATA[NAV_DATA.length - 1];
+  var lx = ml + pw, ly = mt + ph - (Math.log(last.v) / maxL) * ph;
+  svg += '<circle cx="'+lx.toFixed(1)+'" cy="'+ly.toFixed(1)+'" r="3" fill="#3fb950"/>';
+  svg += '<text x="'+(lx-6).toFixed(1)+'" y="'+(ly-8).toFixed(1)+'" fill="#c9d1d9" font-size="11" text-anchor="end">17.5× (+1650%)</text>';
+
+  // regime 色带 (底部, 与净值折线 x 对齐)
+  var bandY = mt + ph + 4, bandH = 7;
+  REGIME_DATA.forEach(function(p, i) {
+    var x1 = ml + i * pw / (REGIME_DATA.length - 1);
+    var x2 = ml + (i + 1) * pw / (REGIME_DATA.length - 1);
+    var color = p.r >= 0.5 ? '#3fb950' : (p.r >= 0.3 ? '#f85149' : '#8b5cf6');
+    svg += '<rect x="'+x1.toFixed(1)+'" y="'+bandY+'" width="'+(x2-x1).toFixed(1)+'" height="'+bandH+'" fill="'+color+'" opacity="0.85"/>';
+  });
+  // 色带标签
+  svg += '<text x="'+ml+'" y="'+(bandY+bandH+10)+'" fill="#8b949e" font-size="10">Regime: </text>';
+  svg += '<text x="'+(ml+48)+'" y="'+(bandY+bandH+10)+'" fill="#3fb950" font-size="10">进攻</text>';
+  svg += '<text x="'+(ml+86)+'" y="'+(bandY+bandH+10)+'" fill="#f85149" font-size="10">防守</text>';
+  svg += '<text x="'+(ml+124)+'" y="'+(bandY+bandH+10)+'" fill="#8b5cf6" font-size="10">危机</text>';
+
+  document.getElementById('nav-chart').innerHTML = svg;
+}
+
+// 纸面实盘每日净值(万, 6-30起) — 由 paper_trade_r4_tracker.py 的 daily_nav 自动更新
+/* PAPER_SIGNAL_PLACEHOLDER */
+var PAPER = {
+  "start": 100.0,
+  "nav": [99.91,97.76,91.09,90.68,90.28,90.03,89.85,96.3,91.84,87.37,89.24,85.77,82.42,76.84,76.01,82.63,81.08,79.34,78.81,80.21,75.02,74.97,70.86,73.11,71.54,74.21,75.62,74.98,77.62,78.03,77.74,78.15,78.05,77.78,79.56,79.23,76.11],
+  "regime": [0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72,0.72],
+  "start_date": "2026-06-30",
+  "end_date": "2026-08-19",
+  "rebal_dates": ["2026-06-30", "2026-07-31"],
+  "rebal_idx": [0, 23]
+};
+
+function drawPaperNav() {
+  var W = 900, H = 195, ml = 44, mr = 12, mt = 18, mb = 26;
+  var pw = W - ml - mr, ph = H - mt - mb;
+  var data = PAPER.nav;
+  // Y 轴自动延伸: 动态范围 + 12% padding
+  var rawMin = Math.min.apply(null, data), rawMax = Math.max.apply(null, data);
+  var pad = Math.max(4, (rawMax - rawMin) * 0.12);
+  var minV = Math.floor(rawMin - pad), maxV = Math.ceil(rawMax + pad);
+  var svg = '';
+  var step = (maxV - minV) / 3;
+  [0, 1, 2, 3].forEach(function(i) {
+    var v = Math.round(minV + i * step);
+    var y = mt + ph - (v - minV) / (maxV - minV) * ph;
+    svg += '<line x1="'+ml+'" y1="'+y.toFixed(1)+'" x2="'+W+'" y2="'+y.toFixed(1)+'" stroke="#30363d" stroke-width="0.5"/>';
+    svg += '<text x="'+(ml-6)+'" y="'+(y+4).toFixed(1)+'" fill="#8b949e" font-size="10" text-anchor="end">'+v+'万</text>';
+  });
+  // 调仓日竖线(虚线, 标在折线下方)
+  (PAPER.rebal_idx || []).forEach(function(ri, k) {
+    var x = ml + ri * pw / (data.length - 1);
+    var label = (PAPER.rebal_dates && PAPER.rebal_dates[k]) ? PAPER.rebal_dates[k].slice(5) : '';
+    svg += '<line x1="'+x.toFixed(1)+'" y1="'+mt+'" x2="'+x.toFixed(1)+'" y2="'+(mt+ph)+'" stroke="#d2991d" stroke-width="1" stroke-dasharray="3,3"/>';
+    svg += '<text x="'+x.toFixed(1)+'" y="'+(mt-5)+'" fill="#d2991d" font-size="9" text-anchor="middle">'+label+'</text>';
+  });
+  var pts = data.map(function(v, i) {
+    var x = ml + i * pw / (data.length - 1);
+    var y = mt + ph - (v - minV) / (maxV - minV) * ph;
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  });
+  svg += '<polyline points="'+pts.join(' ')+'" fill="none" stroke="#f85149" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+  var last = data[data.length - 1];
+  var lx = ml + pw, ly = mt + ph - (last - minV) / (maxV - minV) * ph;
+  svg += '<circle cx="'+lx.toFixed(1)+'" cy="'+ly.toFixed(1)+'" r="3" fill="#f85149"/>';
+  svg += '<text x="'+(lx-6).toFixed(1)+'" y="'+(ly-8).toFixed(1)+'" fill="#c9d1d9" font-size="11" text-anchor="end">'+last.toFixed(1)+'万</text>';
+  // Regime 色带(底部, 随数据自动更新)
+  var regData = PAPER.regime || data.map(function(){return 0.5;});
+  var bandY = mt + ph + 4, bandH = 7;
+  regData.forEach(function(r, i) {
+    var x1 = ml + i * pw / (regData.length - 1);
+    var x2 = ml + (i + 1) * pw / (regData.length - 1);
+    var color = r >= 0.5 ? '#3fb950' : (r >= 0.3 ? '#f85149' : '#8b5cf6');
+    svg += '<rect x="'+x1.toFixed(1)+'" y="'+bandY+'" width="'+(x2-x1).toFixed(1)+'" height="'+bandH+'" fill="'+color+'" opacity="0.85"/>';
+  });
+  // x 轴: 起始日期 + 结束日期
+  svg += '<text x="'+ml+'" y="'+(H-4)+'" fill="#8b949e" font-size="10" text-anchor="start">'+PAPER.start_date+'</text>';
+  svg += '<text x="'+(ml+pw)+'" y="'+(H-4)+'" fill="#8b949e" font-size="10" text-anchor="end">'+PAPER.end_date+'</text>';
+  document.getElementById('paper-chart').innerHTML = svg;
+  document.getElementById('paper-note').textContent =
+    '每日净值 · '+PAPER.start+'万 → '+last.toFixed(1)+'万 ('+((last/PAPER.start-1)*100).toFixed(1)+'%) · 金色虚线=调仓日('+(PAPER.rebal_dates||[]).join(' / ')+') · 红色=实盘';
+}
+
 render();
+drawNavChart();
+drawPaperNav();
 </script>
 </body>
 </html>
