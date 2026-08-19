@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ETF-R4 纸面实盘</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#c9d1d9;--muted:#8b949e;--green:#3fb950;--red:#f85149;--blue:#58a6ff;--gold:#d2991d;--purple:#8b5cf6}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px;max-width:1280px;margin:0 auto;line-height:1.5}
+.header{text-align:center;padding:28px 0 20px;border-bottom:1px solid var(--border);margin-bottom:28px}
+.header h1{font-size:28px;color:var(--blue);letter-spacing:1px}
+.header .tagline{color:var(--muted);font-size:14px;margin-top:8px}
+.header .metrics{display:flex;justify-content:center;gap:24px;margin-top:16px;flex-wrap:wrap}
+.header .metrics .m{text-align:center}
+.header .metrics .m .v{font-size:22px;font-weight:700}
+.header .metrics .m .k{font-size:12px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px;transition:border-color .15s}
+.card:hover{border-color:#484f58}
+.card h2{font-size:13px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;letter-spacing:1.5px;font-weight:600}
+.col-8{grid-column:span 8}
+.col-4{grid-column:span 4}
+.col-6{grid-column:span 6}
+.col-12{grid-column:span 12}
+.metric-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid rgba(48,54,61,0.5)}
+.metric-row:last-child{border:none}
+.metric-val{font-size:19px;font-weight:600}
+.metric-label{font-size:13px;color:var(--muted)}
+.badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:600;margin-right:6px}
+.riskon{background:rgba(63,185,80,0.15);color:var(--green)}
+.neutral{background:rgba(210,153,29,0.15);color:var(--gold)}
+.defense{background:rgba(248,81,73,0.15);color:var(--red)}
+.crisis{background:rgba(139,92,246,0.15);color:var(--purple)}
+.surge-on{background:rgba(210,153,29,0.2);color:var(--gold)}
+.surge-off{background:rgba(139,148,158,0.15);color:var(--muted)}
+.ok{color:var(--green)}.warn{color:var(--red)}.blue{color:var(--blue)}
+.positive{color:var(--green)}.negative{color:var(--red)}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--border);font-size:13px}
+th{color:var(--muted);font-weight:500}
+tbody tr:hover{background:rgba(48,54,61,0.3)}
+.pos-table td:last-child{font-weight:600;text-align:right}
+.empty{color:var(--muted);font-size:13px;padding:12px 0}
+.note{font-size:12px;color:var(--muted);margin-top:10px}
+.footer{text-align:center;padding:24px;color:#484f58;font-size:11px;margin-top:8px}
+@media(max-width:800px){.col-8,.col-4,.col-6{grid-column:span 12}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>ETF-R4 纸面实盘</h1>
+  <div class="tagline">Regime择时 × MomR²(70%)+Amihud(30%) × SURGE广度突破 × KDJ防守 × CRISIS熔断 · 48只ETF · 月度调仓</div>
+  <div class="metrics">
+    <div class="m"><div class="v ok" id="h-ann">+31.3%</div><div class="k">回测年化</div></div>
+    <div class="m"><div class="v blue" id="h-sharpe">1.16</div><div class="k">夏普比率</div></div>
+    <div class="m"><div class="v warn" id="h-mdd">-35.3%</div><div class="k">最大回撤</div></div>
+    <div class="m"><div class="v blue" id="h-oos">+34.3%</div><div class="k">OOS年化</div></div>
+    <div class="m"><div class="v" style="color:var(--gold)" id="h-wfe">1.25</div><div class="k">WFE</div></div>
+  </div>
+</div>
+
+<div class="grid">
+
+<div class="card col-8">
+  <h2>当前信号 (<span id="sig-date">--</span>)</h2>
+  <div style="margin-bottom:14px">
+    <span class="badge riskon" id="sig-regime">--</span>
+    <span class="badge surge-off" id="sig-surge">--</span>
+    <span class="badge neutral" id="sig-mode">--</span>
+  </div>
+  <table class="pos-table">
+    <thead><tr><th>代码</th><th>名称</th><th style="text-align:right">权重</th></tr></thead>
+    <tbody id="sig-positions"></tbody>
+  </table>
+</div>
+
+<div class="card col-4">
+  <h2>策略指标 (70/30)</h2>
+  <div class="metric-row"><span class="metric-label">回测年化</span><span class="metric-val ok">+31.3%</span></div>
+  <div class="metric-row"><span class="metric-label">夏普比率</span><span class="metric-val blue">1.16</span></div>
+  <div class="metric-row"><span class="metric-label">最大回撤</span><span class="metric-val warn">-35.3%</span></div>
+  <div class="metric-row"><span class="metric-label">OOS年化</span><span class="metric-val blue">+34.3%</span></div>
+  <div class="metric-row"><span class="metric-label">WFE</span><span class="metric-val" style="color:var(--gold)">1.25</span></div>
+  <div class="metric-row"><span class="metric-label">DSR / BPO</span><span class="metric-val blue">1.41 / 2.7%</span></div>
+  <div class="note">tushare pct_chg 修正版 · 真实基线31.3%（48只池含备选边际效应）</div>
+</div>
+
+<div class="card col-4">
+  <h2>SURGE 监测</h2>
+  <div class="metric-row"><span class="metric-label">状态</span><span class="badge surge-off" id="surge-status">--</span></div>
+  <div class="metric-row"><span class="metric-label">510300 沪深300</span><span id="surge-510300">--</span></div>
+  <div class="metric-row"><span class="metric-label">510500 中证500</span><span id="surge-510500">--</span></div>
+  <div class="metric-row"><span class="metric-label">159915 创业板</span><span id="surge-159915">--</span></div>
+  <div class="note">触发条件：≥2只站上SMA50 且 Regime≥0.30</div>
+</div>
+
+<div class="card col-4">
+  <h2>纸面实盘 (6/30起)</h2>
+  <div class="metric-row"><span class="metric-label">当前净值</span><span class="metric-val">760,336</span></div>
+  <div class="metric-row"><span class="metric-label">累计收益</span><span class="metric-val warn">-24.0%</span></div>
+  <div class="metric-row"><span class="metric-label">初始资金</span><span class="metric-val">100万</span></div>
+  <div class="note">2026-06-30 起 · 6月期选半导体+信息技术，7月大跌拖累 -26.7%</div>
+</div>
+
+<div class="card col-4">
+  <h2>数据源状态</h2>
+  <div class="metric-row"><span class="metric-label">tushare(主)</span><span class="metric-val ok">✅ 正确</span></div>
+  <div class="metric-row"><span class="metric-label">QMT(参考)</span><span class="metric-val warn">⚠️ 前复权有bug</span></div>
+  <div class="metric-row"><span class="metric-label">ETF池</span><span class="metric-val blue">48只</span></div>
+  <div class="note">主信号用tushare(pct_chg重构)，QMT仅交叉参考</div>
+</div>
+
+<div class="card col-12">
+  <h2>历史调仓 (纸面实盘 6/30 起)</h2>
+  <table>
+    <thead><tr><th>调仓日</th><th>持仓</th><th style="text-align:right">期间收益</th></tr></thead>
+    <tbody>
+      <tr><td>2026-06-30</td><td>信息技术 25% · 半导体 25% · 创业板 25% · 科创50 25%</td><td class="negative" style="text-align:right;font-weight:600">-26.7%</td></tr>
+      <tr><td>2026-07-31</td><td>创新药 25% · 医药 25% · 创业板 25% · 科创50 25%</td><td class="positive" style="text-align:right;font-weight:600">+4.1%</td></tr>
+      <tr><td>2026-08-19</td><td>地产华宝 25% · 医疗 25% · 创业板 25% · 科创50 25%</td><td style="text-align:right;font-weight:600">持有中</td></tr>
+    </tbody>
+  </table>
+</div>
+
+</div>
+<div class="footer">ETF-R4 · 70/30权重 · 双Agent审查+skill框架审查通过 · 2026-08-20 · 真实基线31.3%（实盘预期12-18%）</div>
+
+<script>
+/* SIGNAL_DATA_PLACEHOLDER */
+var S = {
+  "signal_date": "2026-08-19",
+  "regime": 0.694,
+  "regime_label": "RISKON",
+  "mode": "进攻",
+  "surge": false,
+  "surge_detail": {"breadth_count": 0, "breadth": {"510300.SH": false, "510500.SH": false, "159915.SZ": false}},
+  "positions": [
+    {"code": "159707.SZ", "weight": 0.25, "label": "行业动量"},
+    {"code": "512170.SH", "weight": 0.25, "label": "行业动量"},
+    {"code": "159915.SZ", "weight": 0.25, "label": "宽基成长"},
+    {"code": "588000.SH", "weight": 0.25, "label": "宽基成长"}
+  ]
+};
+
+var ETF_NAMES = {
+  "510300.SH":"沪深300","510500.SH":"中证500","159915.SZ":"创业板","588000.SH":"科创50",
+  "511010.SH":"国债","518880.SH":"黄金","511880.SH":"货币",
+  "512880.SH":"证券","512800.SH":"银行","512070.SH":"非银","512000.SH":"券商",
+  "512010.SH":"医药","512170.SH":"医疗","159992.SZ":"创新药","159928.SZ":"消费","512690.SH":"酒",
+  "512480.SH":"半导体","159995.SZ":"芯片","512760.SH":"半导体","512660.SH":"军工","512710.SH":"国防",
+  "515030.SH":"新能车","515790.SH":"光伏","516160.SH":"新能源","512400.SH":"有色","515210.SH":"钢铁","159870.SZ":"化工",
+  "512200.SH":"房地产","512980.SH":"传媒","159869.SZ":"游戏","159939.SZ":"信息技术","515000.SH":"科技",
+  "515050.SH":"5G","515880.SH":"通信","159967.SZ":"创业50","562500.SH":"机器人","159819.SZ":"人工智能","159611.SZ":"电力",
+  "159865.SZ":"畜牧","159227.SZ":"航空航天","159206.SZ":"卫星","159770.SZ":"机器人天弘","588730.SH":"科创AI",
+  "159857.SZ":"光伏天弘","516020.SH":"化工华宝","561560.SH":"电力华泰","560860.SH":"有色万家","159707.SZ":"地产华宝"
+};
+
+function render() {
+  document.getElementById('sig-date').textContent = S.signal_date;
+  var r = S.regime;
+  var regimeEl = document.getElementById('sig-regime');
+  regimeEl.textContent = S.regime_label + ' ' + r.toFixed(3);
+  regimeEl.className = 'badge ' + (r >= 0.50 ? 'riskon' : (r >= 0.30 ? 'defense' : 'crisis'));
+  var surgeEl = document.getElementById('sig-surge');
+  surgeEl.textContent = (S.surge ? '🚀 SURGE' : 'SURGE未触发') + ' ' + S.surge_detail.breadth_count + '/3';
+  surgeEl.className = 'badge ' + (S.surge ? 'surge-on' : 'surge-off');
+  document.getElementById('sig-mode').textContent = S.mode;
+  var tb = document.getElementById('sig-positions');
+  tb.innerHTML = S.positions.map(function(p) {
+    return '<tr><td>'+p.code+'</td><td>'+(ETF_NAMES[p.code]||p.code)+'</td><td style="text-align:right;font-weight:600">'+(p.weight*100).toFixed(0)+'%</td></tr>';
+  }).join('');
+  document.getElementById('surge-status').textContent = S.surge_detail.breadth_count + '/3';
+  document.getElementById('surge-status').className = 'badge ' + (S.surge ? 'surge-on' : 'surge-off');
+  var up510300 = S.surge_detail.breadth['510300.SH'];
+  var up510500 = S.surge_detail.breadth['510500.SH'];
+  var up159915 = S.surge_detail.breadth['159915.SZ'];
+  document.getElementById('surge-510300').innerHTML = up510300 ? '<span class="positive">✅ SMA50上</span>' : '<span class="negative">❌ SMA50下</span>';
+  document.getElementById('surge-510500').innerHTML = up510500 ? '<span class="positive">✅ SMA50上</span>' : '<span class="negative">❌ SMA50下</span>';
+  document.getElementById('surge-159915').innerHTML = up159915 ? '<span class="positive">✅ SMA50上</span>' : '<span class="negative">❌ SMA50下</span>';
+}
+render();
+</script>
+</body>
+</html>
