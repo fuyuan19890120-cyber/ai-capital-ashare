@@ -75,9 +75,11 @@ def main():
     end = datetime.now().strftime("%Y%m%d")
 
     os.makedirs(os.path.dirname(DB_OUT), exist_ok=True)
-    if os.path.exists(DB_OUT):
-        os.remove(DB_OUT)
-    con = sqlite3.connect(DB_OUT)
+    # 写临时库, 完成后原子替换 (崩溃不会留空库/半库)
+    DB_TMP = DB_OUT + ".tmp"
+    if os.path.exists(DB_TMP):
+        os.remove(DB_TMP)
+    con = sqlite3.connect(DB_TMP)
     con.execute("CREATE TABLE daily (code TEXT, date TEXT, open REAL, high REAL, "
                 "low REAL, close REAL, volume REAL)")
     con.commit()
@@ -108,10 +110,16 @@ def main():
 
     con.commit()
     con.close()
-    print(f"\n完成: 成功 {len(ok)}/{len(ALL_ETFS)}, 总 {total_rows} 行")
-    if fail:
-        print(f"失败 {len(fail)} 只: {fail}")
-    print(f"输出库: {DB_OUT}")
+
+    # 原子替换: 全部成功才替换旧库; 部分失败保留旧库(本次数据不写入, 避免静默缺 ETF)
+    if not fail:
+        os.replace(DB_TMP, DB_OUT)
+        print(f"\n✅ 完成: 成功 {len(ok)}/{len(ALL_ETFS)}, 总 {total_rows} 行, 已替换 {DB_OUT}")
+    else:
+        if os.path.exists(DB_TMP):
+            os.remove(DB_TMP)
+        print(f"\n⚠️ 成功 {len(ok)}/{len(ALL_ETFS)}, 失败 {len(fail)} 只: {fail}")
+        print(f"   保留旧库 {DB_OUT} 未动(避免缺 ETF), 请重跑")
 
 
 if __name__ == "__main__":

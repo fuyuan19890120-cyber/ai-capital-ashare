@@ -79,12 +79,12 @@ def compute_regime(close_panel):
 
 
 # ── 因子 ──
-def compute_factors(close_panel, vol_panel, date):
+def compute_factors(close_panel, vol_panel, date, adaptive=True):
     mr2 = {}; amihud = {}
     idx_loc = close_panel.index.get_loc(date)
 
-    # 自适应窗口
-    if "510300.SH" in close_panel.columns:
+    # 自适应窗口 (SURGE 用 fixed w=30, 对齐回测 make_surge_daily_fn 的 adaptive=False)
+    if adaptive and "510300.SH" in close_panel.columns:
         idx_c = close_panel["510300.SH"]
         rets = idx_c.pct_change().dropna()
         mkt_vol = 0.20
@@ -181,16 +181,6 @@ def generate_signal():
     df = load_data()
     dates = sorted(df['date'].unique())
     today = dates[-1]
-    prev_signal_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "signals", "etf_r3_paper.json")
-    # Try to load previous signal for position awareness
-    prev_positions = {}
-    try:
-        with open(prev_signal_path) as f:
-            prev = json.load(f)
-            for p in prev.get("positions", []):
-                prev_positions[p["code"]] = p["weight"]
-    except: pass
-
     close_panel = df.pivot(index='date', columns='code', values='close').ffill(limit=5)
     high_panel = df.pivot(index='date', columns='code', values='high').ffill(limit=5)
     low_panel = df.pivot(index='date', columns='code', values='low').ffill(limit=5)
@@ -211,35 +201,22 @@ def generate_signal():
     for etf_code, above in surge_detail.items():
         print(f"    {etf_code}: {'✅ SMA50上' if above else '❌ SMA50下'}")
 
-    # ── KDJ 中途出场检查 ═─
-    mid_month_exits = {}
-    if r_val < 0.50 and prev_positions:
-        kdj = compute_kdj(close_panel, high_panel, low_panel, today)
-        for code in prev_positions:
-            if code in kdj and kdj[code]["kdj_ext"]:
-                mid_month_exits[code] = {
-                    "K": kdj[code]["K"], "D": kdj[code]["D"],
-                    "reason": "K>80" if kdj[code]["K"] > 80 else ("死叉" if kdj[code].get("dead") else "破20MA")
-                }
-        if mid_month_exits:
-            print(f"\n  ⚠️ KDJ 中途出场信号 ({len(mid_month_exits)}只):")
-            for code, info in mid_month_exits.items():
-                print(f"    {code}: K={info['K']:.0f}, D={info['D']:.0f}, 原因={info['reason']}")
-
     # ── 因子 (月末用) ──
-    is_month_end = True  # 简化: 总是计算月度信号
-    mr2, amihud = compute_factors(close_panel, vol_panel, today)
-
     def zscore(s):
         if not s: return {}
         vals = list(s.values()); mu, std = np.mean(vals), np.std(vals)
         if std == 0: return {c: 0 for c in s}
         return {c: (v-mu)/std for c, v in s.items()}
 
-    z1 = zscore(mr2); z2 = zscore(amihud)
-    all_codes = set(z1.keys()) | set(z2.keys())
-    composite = {c: (1-AMIHUD_W)*z1.get(c,0) + AMIHUD_W*z2.get(c,0) for c in all_codes}
-    ranked = sorted(composite.items(), key=lambda x: x[1], reverse=True)
+    def build_ranked(mr2, amihud):
+        z1 = zscore(mr2); z2 = zscore(amihud)
+        all_codes = set(z1.keys()) | set(z2.keys())
+        composite = {c: (1-AMIHUD_W)*z1.get(c,0) + AMIHUD_W*z2.get(c,0) for c in all_codes}
+        return sorted(composite.items(), key=lambda x: x[1], reverse=True)
+
+    # SURGE 用固定 w=30 (对齐回测 make_surge_daily_fn), 进攻/防守用自适应窗口
+    mr2, amihud = compute_factors(close_panel, vol_panel, today, adaptive=not is_surge)
+    ranked = build_ranked(mr2, amihud)
 
     # ── 生成信号 ──
     signals = []
@@ -325,18 +302,17 @@ def generate_signal():
         "mode": mode,
         "surge": is_surge,
         "surge_detail": {"breadth_count": breadth_count, "breadth": surge_detail},
-        "kdj_mid_month_exits": {c: v for c, v in mid_month_exits.items()},
         "positions": [{"code": c, "weight": round(w, 4), "label": l} for c, w, l in signals],
         "r4_upgrades": {
             "surge_daily": True,
-            "kdj_mid_exit": True,
+            "kdj_mid_exit": False,  # 已证伪: KDJ中途出场验证负面, 弃用
             "regime_tanh_mult": TANH_MULT,
         },
         "kill_conditions": {
             "consecutive_losing_years": 2,
             "single_year_maxdd": 0.35,
         },
-        "notes": f"R4纸面实盘。SURGE每日监控+KDJ中途出场+regime(tanh×{TANH_MULT})。"
+        "notes": f"R4纸面实盘。SURGE每日监控+regime(tanh×{TANH_MULT})。"
     }
 
     signals_dir = os.path.expanduser("~/ai-capital-ashare/signals")

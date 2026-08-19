@@ -6,7 +6,7 @@ ETF-R4 月末自动运行
   2. 更新看板 (dashboard_r4.html)
   3. 发送飞书通知 (notify_feishu_r4.py)
 
-用法: crontab 每天 14:00 运行
+用法: crontab 每天 15:45 运行 (收盘后, tushare 15:00 刷新后, QMT 15:30 更新后)
 """
 import os, sys, json, subprocess, sqlite3
 from datetime import datetime, timedelta
@@ -18,37 +18,45 @@ TUSHARE_SIGNAL_FILE = os.path.expanduser("~/ai-capital-ashare/signals/etf_r4_pap
 DASHBOARD = os.path.join(WORKTREE, "dashboard_r4.html")
 DASHBOARD_R3_PATH = os.path.expanduser("~/ai-capital-ashare/.claude/worktrees/backtest-macd-bb-kdj/dashboard_r3.html")
 DB = os.path.expanduser("~/ai-capital-ashare/data/qmt_qfq.db")
+TUSHARE_DB = os.path.expanduser("~/ai-capital-ashare/data/etf_tushare.db")
+TUSHARE_TOKEN = "2d7e92d4cda95afe932389b4bee184fd9fabcdf8851ff79d68fe933b"
 WEBHOOK_URL = os.environ.get("FEISHU_WEBHOOK", "")
 
-def is_last_trading_day():
-    """检查今天是否是本月最后一个交易日"""
-    con = sqlite3.connect(DB)
-    # 获取数据库中最近的交易日
+def _latest_trade_date():
+    """两库中较新的最新交易日(<=今天), 用于判断月末(单库数据不全也能判断)"""
     today = datetime.now().strftime("%Y%m%d")
-    dates = pd.read_sql_query(
-        f"SELECT DISTINCT date FROM daily WHERE date <= '{today}' ORDER BY date DESC LIMIT 5",
-        con)
-    con.close()
+    latest = None
+    for db in (DB, TUSHARE_DB):
+        try:
+            con = sqlite3.connect(db)
+            r = con.execute("SELECT MAX(date) FROM daily WHERE date <= ?", (today,)).fetchone()
+            con.close()
+            if r and r[0] and (latest is None or r[0] > latest):
+                latest = r[0]
+        except Exception:
+            pass
+    return latest
 
-    if dates.empty:
+def is_last_trading_day():
+    """检查今天是否是本月最后一个交易日(用 tushare 交易日历, 精确判断)"""
+    latest = _latest_trade_date()
+    if latest is None:
         return False, None
 
-    dates['date'] = pd.to_datetime(dates['date'])
-    latest = dates['date'].iloc[0]  # 最近交易日(今天或最近)
-    this_month = latest.month
-    this_year = latest.year
+    y, m = latest[:4], latest[4:6]
+    try:
+        import tushare as ts
+        ts.set_token(TUSHARE_TOKEN)
+        pro = ts.pro_api()
+        cal = pro.trade_cal(exchange='SSE', start_date=f'{y}{m}01', end_date=f'{y}{m}31')
+        open_days = sorted(cal[cal['is_open'] == 1]['cal_date'].astype(str).tolist())
+        last_open = open_days[-1] if open_days else None
+        is_last = (latest == last_open)
+    except Exception:
+        # 交易日历不可用: 退化为「latest 是本月 28 日及以后」的粗略近似
+        is_last = int(latest[6:8]) >= 28
 
-    # 检查这个月是否还有其他交易日在 latest 之后
-    next_month_start = f"{this_year}{this_month+1:02d}01" if this_month < 12 else f"{this_year+1}0101"
-    latest_str = latest.strftime("%Y%m%d")
-    con = sqlite3.connect(DB)
-    later = pd.read_sql_query(
-        f"SELECT COUNT(*) as cnt FROM daily WHERE date > '{latest_str}' AND date < '{next_month_start}'",
-        con)
-    con.close()
-
-    is_last = later['cnt'].iloc[0] == 0
-    return is_last, latest
+    return is_last, pd.to_datetime(latest)
 
 def update_dashboard(signal_path, dashboard_path):
     """将信号 JSON 嵌入看板 HTML"""
@@ -80,26 +88,55 @@ def send_feishu_compare(qmt_signal, tushare_signal):
     ETF_NAMES = {
         "510300.SH":"沪深300","510500.SH":"中证500","159915.SZ":"创业板","588000.SH":"科创50",
         "511010.SH":"国债","518880.SH":"黄金","511880.SH":"货币",
-        "512880.SH":"证券","512010.SH":"医药","159992.SZ":"创新药","159928.SZ":"消费","512690.SH":"酒",
-        "512480.SH":"半导体","159995.SZ":"芯片","512760.SH":"半导体","512660.SH":"军工",
+        "512880.SH":"证券","512800.SH":"银行","512070.SH":"非银","512000.SH":"券商",
+        "512010.SH":"医药","512170.SH":"医疗","159992.SZ":"创新药",
+        "159928.SZ":"消费","512690.SH":"酒",
+        "512480.SH":"半导体","159995.SZ":"芯片","512760.SH":"半导体",
+        "512660.SH":"军工","512710.SH":"国防",
         "515030.SH":"新能车","515790.SH":"光伏","516160.SH":"新能源",
-        "515050.SH":"5G","159819.SZ":"人工智能","562500.SH":"机器人",
-        "512400.SH":"有色","512200.SH":"房地产","512980.SH":"传媒","159939.SZ":"信息技术",
+        "512400.SH":"有色","515210.SH":"钢铁","159870.SZ":"化工",
+        "512200.SH":"房地产","516750.SH":"建材",
+        "512980.SH":"传媒","159869.SZ":"游戏",
+        "159939.SZ":"信息技术","515000.SH":"科技","512720.SH":"计算机",
+        "515050.SH":"5G","515880.SH":"通信",
+        "159967.SZ":"创业50","562500.SH":"机器人",
+        "159819.SZ":"人工智能","159611.SZ":"电力","512580.SH":"环保","516670.SH":"畜牧","159865.SZ":"农业",
     }
 
-    def fmt(sig):
+    def block(sig):
         r = sig['regime']; lbl = sig['regime_label']
-        surge = "🚀SURGE" if sig.get('surge') else "未触发"
-        pos = " / ".join(f"{ETF_NAMES.get(p['code'],'--')}({p['weight']*100:.0f}%)" for p in sig['positions'])
-        return f"regime={r:.3f}({lbl}) {surge} {sig.get('mode','')}\n{pos}"
+        surge = "SURGE触发" if sig.get('surge') else "未触发"
+        pos = "\n".join(f"• {ETF_NAMES.get(p['code'], p['code'])}({p['code']}) {p['weight']*100:.0f}%" for p in sig['positions'])
+        d = sig.get('signal_date', '?')
+        return f"Regime: {r:.3f} ({lbl}) | SURGE: {surge} | 模式: {sig.get('mode','')} | 数据截止 {d}\n持仓:\n{pos}"
+
+    # 时点差异提示: 两源日期不同时标注哪个较新
+    qd = qmt_signal.get('signal_date', '')
+    td = tushare_signal.get('signal_date', '')
+    date_tip = None
+    if qd and td and qd != td:
+        try:
+            diff = (datetime.strptime(qd, "%Y-%m-%d") - datetime.strptime(td, "%Y-%m-%d")).days
+            newer = "QMT" if diff > 0 else "tushare"
+            date_tip = f"⚠️ 时点不同: {newer}较新 {abs(diff)} 天 (分歧多为时点错位, 非数据质量)"
+        except Exception:
+            pass
 
     color = "green" if qmt_signal['regime'] >= 0.5 else "red"
-    content = (
-        f"**ETF-R4 双数据源对比 · {qmt_signal['signal_date']}**\n"
-        f"---\n**QMT**\n{fmt(qmt_signal)}\n"
-        f"---\n**tushare**\n{fmt(tushare_signal)}\n"
-        f"---\n回测: QMT 年化35.1% / tushare 年化30.9% (OOS 30.5% / 34.3%)"
-    )
+    elements = []
+    if date_tip:
+        elements.append({"tag": "div", "text": {"tag": "lark_md", "content": date_tip}})
+    elements.extend([
+        {"tag": "div", "text": {"tag": "lark_md", "content": "**QMT 数据源**"}},
+        {"tag": "div", "text": {"tag": "lark_md", "content": block(qmt_signal)}},
+        {"tag": "hr"},
+        {"tag": "div", "text": {"tag": "lark_md", "content": "**tushare 数据源**"}},
+        {"tag": "div", "text": {"tag": "lark_md", "content": block(tushare_signal)}},
+        {"tag": "hr"},
+        {"tag": "div", "text": {"tag": "lark_md", "content": "回测: QMT 35.1% / tushare 30.9%\nOOS(2021-2026): QMT 30.5% / tushare 34.3%"}},
+        {"tag": "div", "text": {"tag": "lark_md", "content": "**📌 明早 9:30 开盘执行（按金额买入）**"}},
+        {"tag": "note", "elements": [{"tag": "plain_text", "content": f"ETF-R4纸面实盘(双源对比) · {datetime.now().strftime('%Y-%m-%d')} · 仅供参考"}]}
+    ])
 
     card = {
         "msg_type": "interactive",
@@ -108,10 +145,7 @@ def send_feishu_compare(qmt_signal, tushare_signal):
                 "title": {"tag": "plain_text", "content": f"ETF-R4 调仓 · {qmt_signal['signal_date']}"},
                 "template": color
             },
-            "elements": [
-                {"tag": "div", "text": {"tag": "lark_md", "content": content}},
-                {"tag": "note", "elements": [{"tag": "plain_text", "content": f"ETF-R4纸面实盘(双源对比) · {datetime.now().strftime('%Y-%m-%d')} · 仅供参考"}]}
-            ]
+            "elements": elements
         }
     }
 
@@ -123,6 +157,27 @@ def send_feishu_compare(qmt_signal, tushare_signal):
         print(f"❌ 飞书失败: {resp.status_code}")
         return False
 
+def send_feishu_single(signal, ok_label, fail_label):
+    """单源信号通知(另一个源失败时的降级通知)"""
+    if not WEBHOOK_URL:
+        return False
+    import requests
+    pos = "\n".join(f"• {p['code']} {p['weight']*100:.0f}%" for p in signal.get('positions', []))
+    card = {
+        "msg_type": "interactive",
+        "card": {
+            "header": {"title": {"tag": "plain_text", "content": f"ETF-R4 调仓 · {signal.get('signal_date','')}"}, "template": "orange"},
+            "elements": [
+                {"tag": "div", "text": {"tag": "lark_md", "content": f"⚠️ {fail_label} 数据源失败, 仅 {ok_label} 信号\n\n持仓:\n{pos}\n\n📌 明早 9:30 开盘执行"}},
+                {"tag": "note", "elements": [{"tag": "plain_text", "content": "ETF-R4 单源信号(降级)"}]}
+            ]
+        }
+    }
+    resp = requests.post(WEBHOOK_URL, json=card)
+    print(f"  单源飞书: {'✅' if resp.status_code == 200 else '❌'}")
+    return resp.status_code == 200
+
+
 if __name__ == "__main__":
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] ETF-R4 月末检查...")
 
@@ -131,24 +186,25 @@ if __name__ == "__main__":
         print(f"  非月末(最近交易日: {latest_date.date() if latest_date else '?'}), 跳过")
         sys.exit(0)
 
-    # 信号去重保护: 若库里最新日未变(数据冻结/滞后), 不重复生成信号
+    # 信号去重: 本月已生成过信号则跳过(按 YYYY-MM 判断, 而非 signal_date 相等)
+    this_month = latest_date.strftime("%Y-%m")
     if os.path.exists(SIGNAL_FILE):
         with open(SIGNAL_FILE) as f:
             existing = json.load(f)
-        if existing.get("signal_date") == latest_date.strftime("%Y-%m-%d"):
-            print(f"  信号已生成({latest_date.date()}), 数据未更新, 跳过")
+        if str(existing.get("signal_date", "")).startswith(this_month):
+            print(f"  本月({this_month})信号已生成, 跳过")
             sys.exit(0)
 
     print(f"  月末! 最近交易日: {latest_date.date()}")
 
-    # 1. 生成信号 (双数据源: QMT + tushare)
+    # 1. 生成信号 (双数据源: QMT + tushare), 单个失败不阻塞另一个
     script = os.path.join(WORKTREE, "paper_trade_r4.py")
     for label, extra, sigfile in [("QMT", [], SIGNAL_FILE), ("tushare", ["--tushare"], TUSHARE_SIGNAL_FILE)]:
         result = subprocess.run([sys.executable, script] + extra, capture_output=True, text=True)
         if result.returncode != 0:
-            print(f"  ❌ {label} 信号生成失败:\n{result.stderr}")
-            sys.exit(1)
-        print(f"  ✅ {label} 信号 -> {sigfile}")
+            print(f"  ❌ {label} 信号生成失败: {result.stderr[-200:]}")
+        else:
+            print(f"  ✅ {label} 信号 -> {sigfile}")
 
     # 2. 更新看板 (两个路径)
     if os.path.exists(SIGNAL_FILE):
@@ -168,12 +224,22 @@ if __name__ == "__main__":
     else:
         print(f"  ⚠️ 因子更新: {result.stderr[:100]}")
 
-    # 3. 发送飞书 (双数据源对比)
-    if os.path.exists(SIGNAL_FILE) and os.path.exists(TUSHARE_SIGNAL_FILE):
+    # 3. 发送飞书 (双源对比, 单源缺失则发单源降级通知)
+    qmt_signal = tushare_signal = None
+    if os.path.exists(SIGNAL_FILE):
         with open(SIGNAL_FILE) as f:
             qmt_signal = json.load(f)
+    if os.path.exists(TUSHARE_SIGNAL_FILE):
         with open(TUSHARE_SIGNAL_FILE) as f:
             tushare_signal = json.load(f)
+
+    if qmt_signal and tushare_signal:
         send_feishu_compare(qmt_signal, tushare_signal)
+    elif qmt_signal:
+        send_feishu_single(qmt_signal, "QMT", "tushare")
+    elif tushare_signal:
+        send_feishu_single(tushare_signal, "tushare", "QMT")
+    else:
+        print("  ❌ 两个数据源信号都生成失败, 无法发送飞书")
 
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] ✅ ETF-R4 月末任务完成")

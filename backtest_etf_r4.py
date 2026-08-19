@@ -354,42 +354,6 @@ def make_surge_daily_fn(close_panel, vol_panel):
     return check_surge
 
 
-def make_kdj_exit_fn(close_panel, high_panel, low_panel):
-    """KDJ 中途出场检查 (只计算持仓ETF, 不是全部43只)"""
-    def check_kdj_exit(date, positions, context):
-        regime_val = context.get("regime_val", 0.5)
-        if regime_val >= 0.50 or not positions:
-            return None
-        # 只计算持仓ETF的KDJ
-        exits = {}
-        for code in positions:
-            if code not in close_panel.columns:
-                continue
-            idx_loc = close_panel.index.get_loc(date)
-            c = close_panel[code].iloc[:idx_loc+1]
-            h = high_panel[code].iloc[:idx_loc+1]
-            l = low_panel[code].iloc[:idx_loc+1]
-            n = len(c)
-            if n < 30:
-                continue
-            c_v = c.values.astype(float); h_v = h.values.astype(float); l_v = l.values.astype(float)
-            rsv = np.zeros(n); k = np.ones(n)*50; d = np.ones(n)*50
-            for i in range(8, n):
-                hh = h_v[i-8:i+1].max(); ll = l_v[i-8:i+1].min()
-                rsv[i] = (c_v[i] - ll) / (hh - ll) * 100 if hh > ll else 50
-            for i in range(1, n):
-                k[i] = 2/3*k[i-1] + 1/3*rsv[i]
-                d[i] = 2/3*d[i-1] + 1/3*k[i]
-            dead = bool(k[-2] >= d[-2] and k[-1] < d[-1])
-            s = pd.Series(c_v)
-            ma20 = s.rolling(20).mean().iloc[-1]
-            kdj_ext = (k[-1] > KDJ_K_OVERBOUGHT) or dead or (c_v[-1] < ma20 if pd.notna(ma20) else False)
-            if kdj_ext:
-                exits[code] = 'exit'
-        return exits if exits else None
-    return check_kdj_exit
-
-
 def make_monthly_select(close_panel, vol_panel, high_panel, low_panel, use_kdj_defense=True):
     """月末选股"""
     def monthly_select(date, regime_val, context):
@@ -525,7 +489,6 @@ if __name__ == "__main__":
 
     # ── 信号 ──
     surge_fn = make_surge_daily_fn(close_panel, vol_panel)
-    kdj_exit_fn = make_kdj_exit_fn(close_panel, high_panel, low_panel)
     monthly_sel = make_monthly_select(close_panel, vol_panel, high_panel, low_panel, use_kdj_defense=True)
     monthly_sel_no_kdj = make_monthly_select(close_panel, vol_panel, high_panel, low_panel, use_kdj_defense=False)
 
