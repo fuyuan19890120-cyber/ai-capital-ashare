@@ -15,7 +15,7 @@ ETF 专用回测引擎 (R4)
 import pandas as pd
 import numpy as np
 
-ETF_COST = 0.0006  # 单边: 万0.5佣金 + 0.05%滑点
+ETF_COST = 0.001  # 单边: 万0.5佣金 + 0.1%滑点(中小行业ETF实际滑点更高)
 LOT_SIZE = 100     # A股ETF 100股整数倍
 
 
