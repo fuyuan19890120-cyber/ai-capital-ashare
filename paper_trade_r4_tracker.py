@@ -21,12 +21,13 @@ close, open_, high, low, vol = build_panels(df_raw)
 regime = compute_regime_2factor(close, tanh_mult=10)  # ×10(对齐策略)
 monthly_sel = make_monthly_select(close, vol, high, low, use_kdj_defense=True)
 
-# 调仓日期
+# 调仓日期: 只包含"当月已结束"的月末(排除数据截止月, 避免把数据最后一天误当月末调仓)
 all_days = close.index
 md = {}
 for d in all_days: md.setdefault((d.year,d.month),[]).append(d)
 month_ends = sorted([v[-1] for v in md.values()])
-rebal_dates = [me for me in month_ends if me >= pd.Timestamp(START)]
+data_end = close.index[-1]
+rebal_dates = [me for me in month_ends if me >= pd.Timestamp(START) and me < data_end]
 if not rebal_dates: rebal_dates = [close.index[-1]]
 
 # 模拟
