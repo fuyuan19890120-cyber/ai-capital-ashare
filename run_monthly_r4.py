@@ -58,8 +58,8 @@ def is_last_trading_day():
 
     return is_last, pd.to_datetime(latest)
 
-def update_dashboard(signal_path, dashboard_path):
-    """将信号 JSON 嵌入看板 HTML"""
+def update_dashboard(signal_path, dashboard_path, qmt_signal_path=None):
+    """将信号 JSON 嵌入看板 HTML (tushare主 + 可选QMT参考, 同步更新)"""
     import re
     with open(signal_path) as f:
         signal = json.load(f)
@@ -67,11 +67,20 @@ def update_dashboard(signal_path, dashboard_path):
     with open(dashboard_path) as f:
         html = f.read()
 
-    # 替换 SIGNAL 数据
+    # 替换 tushare 主信号
     signal_json = json.dumps(signal, ensure_ascii=False)
     new_line = f'var S={signal_json};'
     html = re.sub(r'/\* SIGNAL_DATA_PLACEHOLDER \*/', new_line, html)
     html = re.sub(r'var S=\{.*?\};', new_line, html)
+
+    # 替换 QMT 参考信号 (同步更新)
+    if qmt_signal_path and os.path.exists(qmt_signal_path):
+        with open(qmt_signal_path) as f:
+            qmt = json.load(f)
+        qmt_json = json.dumps(qmt, ensure_ascii=False)
+        qmt_line = f'var S_QMT={qmt_json};'
+        html = re.sub(r'/\* QMT_SIGNAL_PLACEHOLDER \*/', qmt_line, html)
+        html = re.sub(r'var S_QMT=\{.*?\};', qmt_line, html)
 
     with open(dashboard_path, 'w') as f:
         f.write(html)
@@ -206,12 +215,12 @@ if __name__ == "__main__":
         else:
             print(f"  ✅ {label} 信号 -> {sigfile}")
 
-    # 2. 更新看板 (两个路径)
+    # 2. 更新看板 (两个路径, QMT参考信号同步更新)
     if os.path.exists(SIGNAL_FILE):
-        update_dashboard(SIGNAL_FILE, DASHBOARD)
+        update_dashboard(SIGNAL_FILE, DASHBOARD, QMT_SIGNAL_FILE)
         print(f"  ✅ 看板已更新: {DASHBOARD}")
         if os.path.exists(DASHBOARD_R3_PATH):
-            update_dashboard(SIGNAL_FILE, DASHBOARD_R3_PATH)
+            update_dashboard(SIGNAL_FILE, DASHBOARD_R3_PATH, QMT_SIGNAL_FILE)
             print(f"  ✅ 看板已更新: {DASHBOARD_R3_PATH}")
 
     # 2.5 更新因子监控
