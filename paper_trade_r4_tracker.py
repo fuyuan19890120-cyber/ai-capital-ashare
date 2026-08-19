@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""
+ETF-R4 纸面实盘追踪 · 手动模拟 · 从6月底起
+"""
+import os, sys, json, warnings
+warnings.filterwarnings("ignore")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pandas as pd, numpy as np
+from datetime import datetime
+
+import backtest_etf_r4 as bt
+bt.DB_PATH = os.path.expanduser("~/ai-capital-ashare/data/etf_tushare.db")  # tushare 前复权正确
+from backtest_etf_r4 import load_qmt_data, build_panels, compute_regime_2factor, make_monthly_select
+
+START = "2026-06-30"
+CAPITAL = 1_000_000; COST = 0.001  # 0.1%单边(对齐回测)
+TRACKER = os.path.expanduser("~/ai-capital-ashare/signals/etf_r4_paper_tracker.json")
+
+df_raw = load_qmt_data()
+close, open_, high, low, vol = build_panels(df_raw)
+regime = compute_regime_2factor(close, tanh_mult=10)  # ×10(对齐策略)
+monthly_sel = make_monthly_select(close, vol, high, low, use_kdj_defense=True)
+
+# 调仓日期
+all_days = close.index
+md = {}
+for d in all_days: md.setdefault((d.year,d.month),[]).append(d)
+month_ends = sorted([v[-1] for v in md.values()])
+rebal_dates = [me for me in month_ends if me >= pd.Timestamp(START)]
+if not rebal_dates: rebal_dates = [close.index[-1]]
+
+# 模拟
+cash = CAPITAL; positions = {}; records = []
+
+for i, me in enumerate(rebal_dates):
+    rv = float(regime.loc[me]) if me in regime.index else 0.5
+
+    # 估值上期持仓
+    if positions:
+        tv = cash
+        for c, s in positions.items():
+            px = float(close.at[me, c]) if pd.notna(close.at[me, c]) else 0
+            tv += s * px
+        # 记录上期收益
+        prev_val = records[-1]["start_value"] if records else CAPITAL
+        ret = (tv/prev_val - 1) * 100
+        records[-1]["return_pct"] = round(ret, 1)
+        records[-1]["end_value"] = round(tv, 2)
+        records[-1]["end_date"] = str(me.date())
+        cash = tv  # 全部变现
+        positions = {}
+
+    # 获取目标权重
+    picks = monthly_sel(me, rv, {})
+    if not picks: continue
+
+    # 买入
+    total_eq = cash * 0.95
+    pos_desc = []
+    for code, weight in picks:
+        px = float(close.at[me, code]) if pd.notna(close.at[me, code]) else 0
+        if px <= 0: continue
+        shares = int(total_eq * weight / px / 100) * 100
+        cost = shares * px * (1 + COST)
+        if cost <= cash:
+            cash -= cost; positions[code] = shares
+            pos_desc.append(f"{code} {weight*100:.0f}%")
+
+    records.append({
+        "date": str(me.date()),
+        "start_value": round(cash + sum(positions.get(c,0)*float(close.at[me,c]) for c in positions if pd.notna(close.at[me,c])), 2),
+        "positions": pos_desc,
+        "end_value": None, "end_date": None, "return_pct": None,
+    })
+
+# 最后一期至今
+if records and positions:
+    ld = close.index[-1]
+    tv = cash
+    for c, s in positions.items():
+        px = float(close.at[ld, c]) if pd.notna(close.at[ld, c]) else 0
+        tv += s * px
+    prev = records[-1]["start_value"]
+    ret = (tv/prev - 1) * 100 if prev > 0 else 0
+    records[-1]["return_pct"] = round(ret, 1)
+    records[-1]["end_value"] = round(tv, 2)
+    records[-1]["end_date"] = str(ld.date())
+    final_nav = tv
+else:
+    final_nav = CAPITAL
+
+cum_ret = (final_nav/CAPITAL - 1) * 100
+
+tracker = {
+    "strategy": "ETF-R4 70/30",
+    "start_date": START,
+    "initial_capital": CAPITAL,
+    "current_nav": round(final_nav, 2),
+    "total_return": round(cum_ret, 1),
+    "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+    "records": records,
+}
+
+json.dump(tracker, open(TRACKER, "w"), ensure_ascii=False, indent=1)
+
+print(f"ETF-R4 纸面实盘: {START} ~ {records[-1]['end_date'] if records else START}")
+for r in records:
+    ret = r.get("return_pct")
+    ret_str = f" → {ret:+.1f}%" if ret is not None else " → 持有中"
+    print(f"  {r['date']}: {', '.join(r['positions'])}{ret_str}")
+print(f"\n当前净值: {final_nav:,.0f}  累计收益: {cum_ret:+.1f}%")
