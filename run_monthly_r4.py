@@ -15,6 +15,7 @@ import pandas as pd
 WORKTREE = os.path.dirname(os.path.abspath(__file__))
 SIGNAL_FILE = os.path.expanduser("~/ai-capital-ashare/signals/etf_r4_paper.json")  # tushare 主信号(前复权正确)
 QMT_SIGNAL_FILE = os.path.expanduser("~/ai-capital-ashare/signals/etf_r4_paper_qmt.json")  # QMT 交叉参考
+TRACKER_FILE = os.path.expanduser("~/ai-capital-ashare/signals/etf_r4_paper_tracker.json")  # 纸面实盘净值
 DASHBOARD = os.path.join(WORKTREE, "dashboard_r4.html")
 DASHBOARD_R3_PATH = os.path.expanduser("~/ai-capital-ashare/.claude/worktrees/backtest-macd-bb-kdj/dashboard_r3.html")
 DB = os.path.expanduser("~/ai-capital-ashare/data/qmt_qfq.db")
@@ -58,8 +59,8 @@ def is_last_trading_day():
 
     return is_last, pd.to_datetime(latest)
 
-def update_dashboard(signal_path, dashboard_path, qmt_signal_path=None):
-    """将信号 JSON 嵌入看板 HTML (tushare主 + 可选QMT参考, 同步更新)"""
+def update_dashboard(signal_path, dashboard_path, qmt_signal_path=None, tracker_path=None):
+    """将信号 JSON 嵌入看板 HTML (tushare主 + 可选QMT参考 + 可选纸面实盘, 同步更新)"""
     import re
     with open(signal_path) as f:
         signal = json.load(f)
@@ -81,6 +82,31 @@ def update_dashboard(signal_path, dashboard_path, qmt_signal_path=None):
         qmt_line = f'var S_QMT={qmt_json};'
         html = re.sub(r'/\* QMT_SIGNAL_PLACEHOLDER \*/', qmt_line, html)
         html = re.sub(r'var S_QMT=\{.*?\};', qmt_line, html)
+
+    # 替换纸面实盘净值 (PAPER, 同步更新)
+    if tracker_path and os.path.exists(tracker_path):
+        with open(tracker_path) as f:
+            tracker = json.load(f)
+        daily_nav = tracker.get("daily_nav", [])
+        rebal_idx = []
+        for r in tracker.get("records", []):
+            for i, p in enumerate(daily_nav):
+                if p["d"] == r["date"]:
+                    rebal_idx.append(i)
+                    break
+        paper = {
+            "start": round(tracker.get("initial_capital", 1e6) / 1e4, 2),
+            "nav": [p["v"] for p in daily_nav],
+            "regime": [p.get("r", 0.5) for p in daily_nav],
+            "start_date": daily_nav[0]["d"] if daily_nav else "",
+            "end_date": daily_nav[-1]["d"] if daily_nav else "",
+            "rebal_dates": [r["date"] for r in tracker.get("records", [])],
+            "rebal_idx": rebal_idx,
+        }
+        paper_json = json.dumps(paper, ensure_ascii=False)
+        paper_line = f'var PAPER={paper_json};'
+        html = re.sub(r'/\* PAPER_SIGNAL_PLACEHOLDER \*/', paper_line, html)
+        html = re.sub(r'var PAPER=\{.*?\};', paper_line, html)
 
     with open(dashboard_path, 'w') as f:
         f.write(html)
@@ -217,10 +243,10 @@ if __name__ == "__main__":
 
     # 2. 更新看板 (两个路径, QMT参考信号同步更新)
     if os.path.exists(SIGNAL_FILE):
-        update_dashboard(SIGNAL_FILE, DASHBOARD, QMT_SIGNAL_FILE)
+        update_dashboard(SIGNAL_FILE, DASHBOARD, QMT_SIGNAL_FILE, TRACKER_FILE)
         print(f"  ✅ 看板已更新: {DASHBOARD}")
         if os.path.exists(DASHBOARD_R3_PATH):
-            update_dashboard(SIGNAL_FILE, DASHBOARD_R3_PATH, QMT_SIGNAL_FILE)
+            update_dashboard(SIGNAL_FILE, DASHBOARD_R3_PATH, QMT_SIGNAL_FILE, TRACKER_FILE)
             print(f"  ✅ 看板已更新: {DASHBOARD_R3_PATH}")
 
     # 2.5 更新因子监控

@@ -30,63 +30,61 @@ data_end = close.index[-1]
 rebal_dates = [me for me in month_ends if me >= pd.Timestamp(START) and me < data_end]
 if not rebal_dates: rebal_dates = [close.index[-1]]
 
-# 模拟
-cash = CAPITAL; positions = {}; records = []
+# 每日循环: 月末调仓 + 每日估值
+cash = CAPITAL; positions = {}; records = []; daily_nav = []
+rebal_set = set(rebal_dates)
 
-for i, me in enumerate(rebal_dates):
-    rv = float(regime.loc[me]) if me in regime.index else 0.5
-
-    # 估值上期持仓
-    if positions:
-        tv = cash
-        for c, s in positions.items():
-            px = float(close.at[me, c]) if pd.notna(close.at[me, c]) else 0
-            tv += s * px
-        # 记录上期收益
-        prev_val = records[-1]["start_value"] if records else CAPITAL
-        ret = (tv/prev_val - 1) * 100
-        records[-1]["return_pct"] = round(ret, 1)
-        records[-1]["end_value"] = round(tv, 2)
-        records[-1]["end_date"] = str(me.date())
-        cash = tv  # 全部变现
-        positions = {}
-
-    # 获取目标权重
-    picks = monthly_sel(me, rv, {})
-    if not picks: continue
-
-    # 买入
-    total_eq = cash * 0.95
-    pos_desc = []
-    for code, weight in picks:
-        px = float(close.at[me, code]) if pd.notna(close.at[me, code]) else 0
-        if px <= 0: continue
-        shares = int(total_eq * weight / px / 100) * 100
-        cost = shares * px * (1 + COST)
-        if cost <= cash:
-            cash -= cost; positions[code] = shares
-            pos_desc.append(f"{code} {weight*100:.0f}%")
-
-    records.append({
-        "date": str(me.date()),
-        "start_value": round(cash + sum(positions.get(c,0)*float(close.at[me,c]) for c in positions if pd.notna(close.at[me,c])), 2),
-        "positions": pos_desc,
-        "end_value": None, "end_date": None, "return_pct": None,
-    })
-
-# 最后一期至今
-if records and positions:
-    ld = close.index[-1]
-    tv = cash
+for d in [x for x in close.index if x >= pd.Timestamp(START)]:
+    # 月末调仓
+    if d in rebal_set:
+        rv = float(regime.loc[d]) if d in regime.index else 0.5
+        # 估值上期持仓
+        if positions:
+            tv = cash
+            for c, s in positions.items():
+                px = float(close.at[d, c]) if pd.notna(close.at[d, c]) else 0
+                tv += s * px
+            prev_val = records[-1]["start_value"] if records else CAPITAL
+            ret = (tv/prev_val - 1) * 100
+            records[-1]["return_pct"] = round(ret, 1)
+            records[-1]["end_value"] = round(tv, 2)
+            records[-1]["end_date"] = str(d.date())
+            cash = tv; positions = {}
+        # 选股 + 买入
+        picks = monthly_sel(d, rv, {})
+        if picks:
+            total_eq = cash * 0.95
+            pos_desc = []
+            for code, weight in picks:
+                px = float(close.at[d, code]) if pd.notna(close.at[d, code]) else 0
+                if px <= 0: continue
+                shares = int(total_eq * weight / px / 100) * 100
+                cost = shares * px * (1 + COST)
+                if cost <= cash:
+                    cash -= cost; positions[code] = shares
+                    pos_desc.append(f"{code} {weight*100:.0f}%")
+            records.append({
+                "date": str(d.date()),
+                "start_value": round(cash + sum(positions.get(c,0)*float(close.at[d,c]) for c in positions if pd.notna(close.at[d,c])), 2),
+                "positions": pos_desc,
+                "end_value": None, "end_date": None, "return_pct": None,
+            })
+    # 每日估值
+    nav = cash
     for c, s in positions.items():
-        px = float(close.at[ld, c]) if pd.notna(close.at[ld, c]) else 0
-        tv += s * px
+        px = float(close.at[d, c]) if pd.notna(close.at[d, c]) else 0
+        nav += s * px
+    daily_nav.append({"d": str(d.date()), "v": round(nav/1e4, 2),
+                      "r": round(float(regime.loc[d]) if d in regime.index else 0.5, 3)})
+
+# 最后一期至今收益
+if records and positions:
+    final_nav = daily_nav[-1]["v"] * 1e4
     prev = records[-1]["start_value"]
-    ret = (tv/prev - 1) * 100 if prev > 0 else 0
+    ret = (final_nav/prev - 1) * 100 if prev > 0 else 0
     records[-1]["return_pct"] = round(ret, 1)
-    records[-1]["end_value"] = round(tv, 2)
-    records[-1]["end_date"] = str(ld.date())
-    final_nav = tv
+    records[-1]["end_value"] = round(final_nav, 2)
+    records[-1]["end_date"] = str(close.index[-1].date())
 else:
     final_nav = CAPITAL
 
@@ -100,6 +98,7 @@ tracker = {
     "total_return": round(cum_ret, 1),
     "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
     "records": records,
+    "daily_nav": daily_nav,
 }
 
 json.dump(tracker, open(TRACKER, "w"), ensure_ascii=False, indent=1)
