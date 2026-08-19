@@ -3,8 +3,11 @@
 交叉比对: Tushare 前复权数据 vs QMT qmt_qfq.db 前复权数据
 验证 close 是否一致 + volume 单位差异
 """
-import os, sqlite3
+import os, sys, sqlite3
 import pandas as pd
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from backtest_etf_r4 import ALL_ETFS
 
 QMT_DB = os.path.expanduser("~/ai-capital-ashare/data/qmt_qfq.db")
 TS_DB = os.path.expanduser("~/ai-capital-ashare/data/etf_tushare.db")
@@ -14,6 +17,10 @@ tcon = sqlite3.connect(TS_DB)
 qmt = pd.read_sql("SELECT code, date, close, volume FROM daily", qcon)
 tsd = pd.read_sql("SELECT code, date, close, volume FROM daily", tcon)
 qcon.close(); tcon.close()
+
+# 只比对策略池(48只)内的ETF, 排除4只僵尸和000300指数
+qmt = qmt[qmt["code"].isin(ALL_ETFS)]
+tsd = tsd[tsd["code"].isin(ALL_ETFS)]
 
 qmt_codes = set(qmt["code"]); ts_codes = set(tsd["code"])
 print(f"QMT {len(qmt_codes)} 只, Tushare {len(ts_codes)} 只")

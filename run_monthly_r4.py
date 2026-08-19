@@ -13,8 +13,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 WORKTREE = os.path.dirname(os.path.abspath(__file__))
-SIGNAL_FILE = os.path.expanduser("~/ai-capital-ashare/signals/etf_r4_paper.json")
-TUSHARE_SIGNAL_FILE = os.path.expanduser("~/ai-capital-ashare/signals/etf_r4_paper_tushare.json")
+SIGNAL_FILE = os.path.expanduser("~/ai-capital-ashare/signals/etf_r4_paper.json")  # tushare 主信号(前复权正确)
+QMT_SIGNAL_FILE = os.path.expanduser("~/ai-capital-ashare/signals/etf_r4_paper_qmt.json")  # QMT 交叉参考
 DASHBOARD = os.path.join(WORKTREE, "dashboard_r4.html")
 DASHBOARD_R3_PATH = os.path.expanduser("~/ai-capital-ashare/.claude/worktrees/backtest-macd-bb-kdj/dashboard_r3.html")
 DB = os.path.expanduser("~/ai-capital-ashare/data/qmt_qfq.db")
@@ -199,7 +199,7 @@ if __name__ == "__main__":
 
     # 1. 生成信号 (双数据源: QMT + tushare), 单个失败不阻塞另一个
     script = os.path.join(WORKTREE, "paper_trade_r4.py")
-    for label, extra, sigfile in [("QMT", [], SIGNAL_FILE), ("tushare", ["--tushare"], TUSHARE_SIGNAL_FILE)]:
+    for label, extra, sigfile in [("tushare", [], SIGNAL_FILE), ("QMT", ["--qmt"], QMT_SIGNAL_FILE)]:
         result = subprocess.run([sys.executable, script] + extra, capture_output=True, text=True)
         if result.returncode != 0:
             print(f"  ❌ {label} 信号生成失败: {result.stderr[-200:]}")
@@ -228,16 +228,16 @@ if __name__ == "__main__":
     # 判断「本月新鲜」而非「文件存在」: 旧文件(上月日期)残留时不会被当现役源
     this_month = latest_date.strftime("%Y-%m")
     qmt_signal = tushare_signal = None
-    if os.path.exists(SIGNAL_FILE):
+    if os.path.exists(SIGNAL_FILE):  # tushare 主信号
         with open(SIGNAL_FILE) as f:
             _sig = json.load(f)
         if str(_sig.get("signal_date", "")).startswith(this_month):
-            qmt_signal = _sig
-    if os.path.exists(TUSHARE_SIGNAL_FILE):
-        with open(TUSHARE_SIGNAL_FILE) as f:
+            tushare_signal = _sig
+    if os.path.exists(QMT_SIGNAL_FILE):  # QMT 交叉参考
+        with open(QMT_SIGNAL_FILE) as f:
             _sig = json.load(f)
         if str(_sig.get("signal_date", "")).startswith(this_month):
-            tushare_signal = _sig
+            qmt_signal = _sig
 
     if qmt_signal and tushare_signal:
         send_feishu_compare(qmt_signal, tushare_signal)

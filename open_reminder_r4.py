@@ -11,8 +11,8 @@ crontab: 15 9 * * 1-5 (工作日 9:15, 开盘前)
 import os, sys, json
 from datetime import datetime, timedelta
 
-SIGNAL = os.path.expanduser("~/ai-capital-ashare/signals/etf_r4_paper_tushare.json")
-QMT_SIGNAL = os.path.expanduser("~/ai-capital-ashare/signals/etf_r4_paper.json")
+SIGNAL = os.path.expanduser("~/ai-capital-ashare/signals/etf_r4_paper.json")  # tushare 主信号
+QMT_SIGNAL = os.path.expanduser("~/ai-capital-ashare/signals/etf_r4_paper_qmt.json")  # QMT 交叉参考
 WEBHOOK_URL = os.environ.get("FEISHU_WEBHOOK", "")
 
 ETF_NAMES = {
