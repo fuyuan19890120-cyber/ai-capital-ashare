@@ -35,3 +35,9 @@ backtests/
 dashboard/.streamlit/secrets.toml
 .claude/
 !data/etf_sector/
+
+# 数据库文件不进 git(防止 GitHub 同步清空)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
